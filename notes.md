@@ -125,3 +125,11 @@
 - Raised the content schema to save version 5 and expanded the catalog to sixteen species and twelve stable customer identities. New species are assigned across five unlock weeks instead of appearing as an unfiltered wall on day one.
 - Added declarative Quick, Fair, and Boutique price bands; a Monday–Friday calendar; ten weekly objective types; customer archetypes, personal budget ranges, and returning dialogue; and exactly forty handcrafted brief templates.
 - Brief templates combine readable framing with a viable Must have trait, an optional distinct Would love trait, and a position inside each neighbor’s budget range. Validation confirms that every referenced trait exists in the species catalog and all customer, species, objective, and brief IDs are unique.
+
+## 2026-08-09 — Neighborhood Week v1, progression engine
+
+- Added a deterministic five-day calendar and briefing engine that combines forty authored request frames with the customers, plants, and traits currently unlocked that week.
+- Made customer budgets and supplier forecasting use the same visible Quick-price floor, including the full three-coin variation a delivered plant can roll. Existing migrated stock remains usable even when it comes from a later unlock week.
+- Added persistent returning-customer visit context and ten rotating weekly objective types with bounded targets, concise progress labels, and reusable week-stat tracking.
+- Upgraded supplier matching to reserve a distinct affordable plant for every visitor. Shops at 10–12 plants receive adaptive one- or two-plant top-ups, full viable inventories can skip ordering, and a zero-cash rescue route remains available when stock is insufficient.
+- Validation covered days 1–25, 300 generated customer briefs, 300 supplier lots, 75 near/full-capacity cases, zero-cash recovery, migrated stock, deterministic repeatability, and every weekly objective metric. Module syntax and whitespace checks pass.

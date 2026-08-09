@@ -1,4 +1,5 @@
 import { INVENTORY_CAPACITY, SPECIES, SUPPLIER_TYPES } from "./game-data.js";
+import { askingPrice, availableSpeciesForWeek, calendarForDay } from "./progression-system.js";
 
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
 const SPECIES_BY_NAME = new Map(SPECIES.map((species) => [species.name, species]));
@@ -19,14 +20,37 @@ function plantTraits(plant) {
   return species?.traits || [];
 }
 
-function canAssignNeeds(plants, needs, customerIndex = 0, used = new Set()) {
-  if (customerIndex >= needs.length) return true;
-  const need = needs[customerIndex];
+function plantSpecies(plant) {
+  return SPECIES_BY_ID.get(plant?.speciesId)
+    || SPECIES_BY_NAME.get(plant?.species)
+    || SPECIES_BY_NAME.get(plant?.speciesName)
+    || null;
+}
+
+function quickPrice(plant) {
+  return askingPrice({ ...plant, priceBand: "quick" }, plantSpecies(plant));
+}
+
+function customerRequirement(customer) {
+  const budget = Number(customer?.budget);
+  return {
+    need: customerNeed(customer),
+    budget: customer?.budget !== undefined && customer?.budget !== null && Number.isFinite(budget)
+      ? budget
+      : null,
+  };
+}
+
+function canAssignNeeds(plants, requirements, customerIndex = 0, used = new Set()) {
+  if (customerIndex >= requirements.length) return true;
+  const { need, budget } = requirements[customerIndex];
 
   for (let plantIndex = 0; plantIndex < plants.length; plantIndex += 1) {
-    if (used.has(plantIndex) || !plantTraits(plants[plantIndex]).includes(need)) continue;
+    const plant = plants[plantIndex];
+    if (used.has(plantIndex) || !plantTraits(plant).includes(need)) continue;
+    if (budget !== null && quickPrice(plant) > budget) continue;
     used.add(plantIndex);
-    if (canAssignNeeds(plants, needs, customerIndex + 1, used)) return true;
+    if (canAssignNeeds(plants, requirements, customerIndex + 1, used)) return true;
     used.delete(plantIndex);
   }
 
@@ -35,12 +59,13 @@ function canAssignNeeds(plants, needs, customerIndex = 0, used = new Set()) {
 
 /**
  * Returns true only when distinct inventory plants can be assigned to every
- * customer's required trait. A single plant can never cover two sales.
+ * customer's required trait and budget. A single plant can never cover two
+ * sales. Legacy customers without a budget retain their trait-only behavior.
  */
 export function inventoryCoversCustomers(inventory = [], customers = []) {
-  const needs = customers.map(customerNeed);
-  if (needs.some((need) => !need)) return false;
-  return canAssignNeeds(inventory, needs);
+  const requirements = customers.map(customerRequirement);
+  if (requirements.some(({ need }) => !need)) return false;
+  return canAssignNeeds(inventory, requirements);
 }
 
 function hashText(value) {
@@ -52,7 +77,7 @@ function hashText(value) {
   return hash >>> 0;
 }
 
-function combinations(count, allowDuplicates) {
+function combinations(speciesPool, count, allowDuplicates) {
   const results = [];
 
   function visit(start, chosen) {
@@ -60,8 +85,8 @@ function combinations(count, allowDuplicates) {
       results.push([...chosen]);
       return;
     }
-    for (let index = start; index < SPECIES.length; index += 1) {
-      chosen.push(SPECIES[index]);
+    for (let index = start; index < speciesPool.length; index += 1) {
+      chosen.push(speciesPool[index]);
       visit(allowDuplicates ? index : index + 1, chosen);
       chosen.pop();
     }
@@ -77,6 +102,11 @@ function virtualPlants(speciesList) {
     speciesId: species.id,
     species: species.name,
     traits: species.traits,
+    // Plant records can roll up to three coins above the catalog value. Price
+    // supplier previews at that ceiling so a promised budget always survives
+    // the carton opening.
+    price: species.price + 3,
+    priceBand: "quick",
   }));
 }
 
@@ -103,13 +133,15 @@ function inventorySignature(inventory) {
   }).sort().join(",");
 }
 
-function chooseSpecies(type, day, customers, inventory) {
-  const quantity = type.quantity.min;
+function chooseSpecies(type, day, customers, inventory, quantity = type.quantity.min) {
+  const week = calendarForDay(day).week;
+  const speciesPool = availableSpeciesForWeek(week);
   const needs = customers.map(customerNeed).filter(Boolean);
-  const seedKey = [day, type.id, needs.join(","), inventorySignature(inventory)].join("|");
+  const budgets = customers.map((customer) => Number.isFinite(Number(customer?.budget)) ? Number(customer.budget) : "legacy");
+  const seedKey = [day, type.id, quantity, needs.join(","), budgets.join(","), inventorySignature(inventory)].join("|");
   const requestedNoDuplicates = Boolean(type.selection.avoidDuplicates);
 
-  let candidates = combinations(quantity, !requestedNoDuplicates)
+  let candidates = combinations(speciesPool, quantity, !requestedNoDuplicates)
     .filter((speciesList) => inventoryCoversCustomers(
       [...inventory, ...virtualPlants(speciesList)],
       customers,
@@ -118,7 +150,7 @@ function chooseSpecies(type, day, customers, inventory) {
 
   if (!candidates.length && requestedNoDuplicates) {
     duplicatePreferenceRelaxed = true;
-    candidates = combinations(quantity, true)
+    candidates = combinations(speciesPool, quantity, true)
       .filter((speciesList) => inventoryCoversCustomers(
         [...inventory, ...virtualPlants(speciesList)],
         customers,
@@ -126,7 +158,8 @@ function chooseSpecies(type, day, customers, inventory) {
   }
 
   if (!candidates.length) {
-    const fallback = combinations(quantity, true);
+    const fallback = combinations(speciesPool, quantity, true);
+    if (!fallback.length) return { speciesList: [], duplicatePreferenceRelaxed, coversRequests: false };
     const index = hashText(seedKey) % fallback.length;
     return { speciesList: fallback[index], duplicatePreferenceRelaxed, coversRequests: false };
   }
@@ -141,6 +174,40 @@ function chooseSpecies(type, day, customers, inventory) {
 
   const index = hashText(seedKey) % candidates.length;
   return { speciesList: candidates[index], duplicatePreferenceRelaxed, coversRequests: true };
+}
+
+function chooseLotSpecies(type, { day, customers, inventory, capacity }) {
+  const configuredQuantity = Math.max(0, Math.floor(Number(type.quantity?.min) || 0));
+  const freeCapacity = Math.max(0, capacity - inventory.length);
+  const maximumQuantity = Math.min(configuredQuantity, freeCapacity);
+  if (maximumQuantity === 0) {
+    return {
+      ...chooseSpecies(type, day, customers, inventory, 0),
+      capacityAdjusted: configuredQuantity > 0,
+      configuredQuantity,
+    };
+  }
+
+  // A nearly full shop needs a top-up, not a tray it cannot accept. Search in
+  // ascending quantities so one missing match never consumes two shelf spaces.
+  if (freeCapacity <= 2 && !inventoryCoversCustomers(inventory, customers)) {
+    for (let quantity = 1; quantity <= maximumQuantity; quantity += 1) {
+      const candidate = chooseSpecies(type, day, customers, inventory, quantity);
+      if (candidate.coversRequests) {
+        return {
+          ...candidate,
+          capacityAdjusted: quantity !== configuredQuantity,
+          configuredQuantity,
+        };
+      }
+    }
+  }
+
+  return {
+    ...chooseSpecies(type, day, customers, inventory, maximumQuantity),
+    capacityAdjusted: maximumQuantity !== configuredQuantity,
+    configuredQuantity,
+  };
 }
 
 function revealMetadata(type, speciesList) {
@@ -159,7 +226,7 @@ function revealMetadata(type, speciesList) {
 }
 
 function supplierLot(type, { day, customers, inventory, coins, capacity }) {
-  const chosen = chooseSpecies(type, day, customers, inventory);
+  const chosen = chooseLotSpecies(type, { day, customers, inventory, capacity });
   const { speciesList } = chosen;
   const quantity = speciesList.length;
   const nurseryCost = calculateCost(type, speciesList);
@@ -177,9 +244,14 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
     kind: "supplier",
     supplierId: type.id,
     name: type.name,
-    description: hardshipCredit
-      ? `${type.description} The nursery has put this one on a pay-what-you-can rescue tab.`
-      : type.description,
+    description: [
+      chosen.capacityAdjusted
+        ? quantity === 0
+          ? "No shelf space remains for a delivery."
+          : `${quantity === 1 ? "One plant" : `${quantity} plants`} selected as a shelf-space top-up.`
+        : type.description,
+      hardshipCredit ? "The nursery has put this one on a pay-what-you-can rescue tab." : "",
+    ].filter(Boolean).join(" "),
     speciesNames: speciesList.map((species) => species.name),
     speciesIds: speciesList.map((species) => species.id),
     cost,
@@ -190,8 +262,10 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
     fitsCapacity,
     capacityRemainingAfter: capacity - inventory.length - quantity,
     coversRequests,
-    selectable: affordable && fitsCapacity && coversRequests,
+    selectable: quantity > 0 && affordable && fitsCapacity && coversRequests,
     duplicatePreferenceRelaxed: chosen.duplicatePreferenceRelaxed,
+    capacityAdjusted: chosen.capacityAdjusted,
+    configuredQuantity: chosen.configuredQuantity,
     hardshipCredit,
     nurseryCost,
   };
