@@ -1,0 +1,237 @@
+:root {
+  color-scheme: light;
+  font-family: "DM Mono", monospace;
+  --ink: #203a2c;
+  --fern: #487457;
+  --moss: #84a171;
+  --paper: #efe9d8;
+  --peach: #e8a77f;
+  background: #d7d0b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 247, 212, 0.86), transparent 32rem),
+    linear-gradient(145deg, #d7d0b8, #bfc9a8);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.title-screen {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  min-height: 100svh;
+  padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right))
+    max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  place-items: center;
+  overflow: hidden;
+}
+
+.title-screen::before {
+  position: absolute;
+  z-index: -2;
+  inset: 1.1rem;
+  border: 1px solid rgba(32, 58, 44, 0.22);
+  border-radius: 1.4rem;
+  content: "";
+}
+
+.title-card {
+  width: min(42rem, 100%);
+  padding: clamp(1.4rem, 5vw, 3.6rem);
+  text-align: center;
+}
+
+.eyebrow,
+.status,
+footer {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin: 0 0 1.25rem;
+  color: var(--fern);
+}
+
+h1 {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-size: clamp(3.4rem, 13vw, 8.4rem);
+  font-weight: 700;
+  line-height: 0.72;
+  letter-spacing: -0.07em;
+  text-wrap: balance;
+}
+
+h1 span {
+  display: block;
+}
+
+.title-accent {
+  position: relative;
+  z-index: -1;
+  margin-top: 0.2em;
+  color: var(--paper);
+  text-shadow:
+    -2px -2px 0 var(--ink),
+    2px -2px 0 var(--ink),
+    -2px 2px 0 var(--ink),
+    2px 2px 0 var(--ink),
+    0 0.12em 0 var(--peach);
+  transform: rotate(-2deg);
+}
+
+.tagline {
+  max-width: 34rem;
+  margin: 2.5rem auto 2rem;
+  font-size: clamp(0.78rem, 2vw, 0.92rem);
+  line-height: 1.8;
+}
+
+.primary-button {
+  display: inline-flex;
+  min-width: 13.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  color: var(--paper);
+  background: var(--ink);
+  box-shadow: 0 0.5rem 0 var(--peach);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.primary-button:disabled {
+  cursor: progress;
+  opacity: 0.88;
+}
+
+.status {
+  margin: 1.2rem 0 0;
+  opacity: 0.62;
+}
+
+footer {
+  position: absolute;
+  right: max(2rem, env(safe-area-inset-right));
+  bottom: max(2rem, env(safe-area-inset-bottom));
+  left: max(2rem, env(safe-area-inset-left));
+  display: flex;
+  justify-content: space-between;
+  opacity: 0.55;
+}
+
+.sun-glow {
+  position: absolute;
+  z-index: -3;
+  top: -24vmin;
+  left: 50%;
+  width: 65vmin;
+  height: 65vmin;
+  border-radius: 50%;
+  background: #fae7a4;
+  filter: blur(1px);
+  transform: translateX(-50%);
+}
+
+.leaf {
+  position: absolute;
+  z-index: -1;
+  width: clamp(8rem, 22vw, 18rem);
+  height: clamp(15rem, 42vw, 34rem);
+  border: 2px solid var(--ink);
+  border-radius: 100% 0 100% 0;
+  background: var(--moss);
+  box-shadow: inset 0 0 0 0.8rem rgba(239, 233, 216, 0.18);
+  opacity: 0.76;
+}
+
+.leaf::after {
+  position: absolute;
+  top: 9%;
+  left: 50%;
+  width: 2px;
+  height: 86%;
+  background: var(--ink);
+  content: "";
+  transform: rotate(44deg);
+  transform-origin: top;
+}
+
+.leaf-one {
+  top: -9rem;
+  left: -5rem;
+  transform: rotate(28deg);
+}
+
+.leaf-two {
+  right: -8rem;
+  bottom: -12rem;
+  background: var(--fern);
+  transform: rotate(-20deg);
+}
+
+.leaf-three {
+  right: 5%;
+  top: -20rem;
+  width: 10rem;
+  background: var(--peach);
+  transform: rotate(63deg);
+}
+
+@media (max-width: 42rem) {
+  .title-card {
+    transform: translateY(-1.5rem);
+  }
+
+  .tagline {
+    max-width: 26rem;
+    margin-top: 2.1rem;
+  }
+
+  footer {
+    font-size: 0.55rem;
+  }
+
+  footer span:last-child {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .leaf-one {
+    animation: breathe 7s ease-in-out infinite alternate;
+  }
+
+  .leaf-two {
+    animation: breathe 9s ease-in-out -2s infinite alternate-reverse;
+  }
+
+  @keyframes breathe {
+    to {
+      translate: 0 1.2rem;
+      rotate: 3deg;
+    }
+  }
+}
