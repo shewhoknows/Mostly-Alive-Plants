@@ -205,11 +205,30 @@
     </section>
 
     <section id="day-report" class="modal-layer report-layer" hidden aria-labelledby="report-title">
-      <div class="modal-card report-card" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-copy">
+      <div class="modal-card report-card" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-lead">
         <div class="report-stamp" aria-hidden="true">✿</div>
         <p class="panel-kicker">Shutters down</p>
         <h2 id="report-title">A very good first day</h2>
-        <p id="report-copy">Three plants found new windowsills.</p>
+        <div id="report-copy" class="report-summary">
+          <p id="report-lead" class="report-lead">Three plants found new windowsills.</p>
+
+          <dl class="report-stats" aria-label="Today’s shop results">
+            <div class="report-stat report-stat-profit">
+              <dt>Gross profit</dt>
+              <dd id="report-profit">+18 coins</dd>
+            </div>
+            <div class="report-stat report-stat-bloom">
+              <dt>Bloom earned</dt>
+              <dd id="report-bloom">+6</dd>
+            </div>
+            <div class="report-stat report-stat-stock">
+              <dt>Ready tomorrow</dt>
+              <dd id="report-stock">2 plants</dd>
+            </div>
+          </dl>
+
+          <p id="report-highlight" class="report-highlight"><span aria-hidden="true">✦</span> Display challenge complete.</p>
+        </div>
         <button id="next-day" class="button button-primary" type="button">
           <span>Plan tomorrow</span><span aria-hidden="true">→</span>
         </button>

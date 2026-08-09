@@ -250,6 +250,11 @@ document.addEventListener("DOMContentLoaded", () => {
     report: $("day-report"),
     reportTitle: $("report-title"),
     reportCopy: $("report-copy"),
+    reportProfit: $("report-profit"),
+    reportLead: $("report-lead"),
+    reportBloom: $("report-bloom"),
+    reportStock: $("report-stock"),
+    reportHighlight: $("report-highlight"),
     nextDay: $("next-day"),
     upgradeModal: $("upgrade-modal"),
     upgradeOptions: $("upgrade-options"),
@@ -1978,20 +1983,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (ui.game) ui.game.inert = true;
     requestAnimationFrame(() => ui.nextDay?.focus());
-    if (ui.reportTitle) ui.reportTitle.textContent = `Day ${String(state.day).padStart(2, "0")} — shutters down`;
+    if (ui.reportTitle) ui.reportTitle.textContent = `Day ${String(state.day).padStart(2, "0")} complete`;
     if (ui.reportCopy) {
       const grossProfit = state.dailyRevenue - state.dailyCostOfGoods;
-      const tillChange = state.coins - state.dailyStartingCoins;
       const bloomEarned = Math.max(0, state.bloom - state.dailyBloomStart);
-      const idealDisplays = state.inventory.filter((plant) => Number.isInteger(plant.slot) && lightFit(plant).level === "ideal").length;
-      const standing = bloomStanding();
-      const flourish = state.dailyCare >= 6 ? "The leaves are immaculate." : "A few leaves could use attention tomorrow.";
-      const display = !state.displayGoal
-        ? "No display challenge was set."
-        : state.displayGoal.claimed ? "Display challenge complete." : "The display challenge can try again tomorrow.";
-      const estimate = state.accountingEstimate ? " (partly estimated from the previous save)" : "";
-      const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"} remain${state.inventory.length === 1 ? "s" : ""} in stock`;
-      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins revenue − ${state.dailyCostOfGoods} sold-stock cost${estimate} = ${grossProfit >= 0 ? "+" : ""}${grossProfit} gross profit · ${state.dailyStockCost} coins spent at the nursery · ${tillChange >= 0 ? "+" : ""}${tillChange} till change · +${bloomEarned} Bloom · ${stockCopy} · ${idealDisplays} in ideal light · ${state.dailyCare} helpful care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. Shop standing: ${standing.name} · ${standing.copy}. ${display} ${flourish}`;
+      const profitCopy = `${grossProfit >= 0 ? "+" : ""}${grossProfit} coins`;
+      const leadCopy = state.dailySales
+        ? `${state.dailySales} plant${state.dailySales === 1 ? "" : "s"} found ${state.dailySales === 1 ? "a new home" : "new homes"}.`
+        : "The shop was quiet today.";
+      const bloomCopy = `+${bloomEarned}`;
+      const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"}`;
+      let highlightCopy = "The shop is ready for another morning.";
+      if (state.displayGoal?.claimed) highlightCopy = "Display challenge complete. The front shelves really worked.";
+      else if (state.dailyPerfects) highlightCopy = "A customer found exactly what they were hoping for.";
+      else if (state.dailyRecoveries) highlightCopy = "A thirsty plant bounced back beautifully.";
+      else if (state.dailyCare >= 6) highlightCopy = "The leaves are looking immaculate.";
+
+      if (ui.reportProfit && ui.reportLead && ui.reportBloom && ui.reportStock && ui.reportHighlight) {
+        ui.reportProfit.textContent = profitCopy;
+        ui.reportProfit.dataset.tone = grossProfit >= 0 ? "positive" : "negative";
+        ui.reportLead.textContent = leadCopy;
+        ui.reportBloom.textContent = bloomCopy;
+        ui.reportStock.textContent = stockCopy;
+        ui.reportHighlight.lastChild.textContent = ` ${highlightCopy}`;
+      } else {
+        ui.reportCopy.textContent = `${leadCopy} ${profitCopy} gross profit, ${bloomCopy} Bloom, and ${stockCopy} ready for tomorrow.`;
+      }
     }
     sound("report");
     save();

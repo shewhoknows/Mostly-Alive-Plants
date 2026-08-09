@@ -99,3 +99,11 @@
 - Added keyboard focus loops to every modal, attached the closing results as the report dialog description, hid the redundant Arrange toggle during implicit preparation mode, and made tall four-choice supplier clipboards scroll from a safe top edge on short desktop screens.
 - Updated `README.md` to describe the actual supplier/preparation/accounting loop and reconciled `GAMEPLAY_PLAN.md` with the attached campaign direction. The implemented save-v4 foundation is now marked complete; the next bounded recommendation is price bands and budgets, remembered customer archetypes, and a light five-day-week shell.
 - Follow-up browser validation covered rescue-clue concealment, modal focus wrapping, loose-to-display bench swapping, full partial-day v3 recovery, completed-day v3 report recovery, and report accessibility metadata.
+
+## 2026-08-09 — Calmer closing report
+
+- Replaced the end-of-day wall of accounting prose with a short outcome sentence, three spacious result cards, and one warm highlight.
+- Reduced the visible results to gross profit, Bloom earned, and plants ready for tomorrow. Revenue breakdowns, nursery spend, till change, care totals, light totals, and standing copy remain available to the game state but no longer compete for attention on the celebratory screen.
+- Added semantic term/value markup for the three results and limited the dialog description to the human-readable outcome sentence, so assistive technology does not announce the entire report as one breathless block.
+- Added a negative-profit color state without relying on color alone; every result retains an explicit label and signed value.
+- Browser validation used an exact Day 10 fixture at 872×600: the 478px-tall card remained fully visible, the three results stayed on one relaxed row, the action retained focus, Tab and Shift+Tab remained trapped in the modal, and the browser reported no console errors or warnings.
