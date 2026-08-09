@@ -664,9 +664,14 @@ h1 span {
 
 .supplier-layer {
   z-index: 34;
+  place-items: start center;
   background:
     radial-gradient(circle at 50% 18%, rgba(242, 207, 107, 0.13), transparent 28rem),
     rgba(32, 46, 36, 0.72);
+}
+
+.supplier-layer > .supplier-board {
+  margin-block: auto;
 }
 
 .supplier-board {

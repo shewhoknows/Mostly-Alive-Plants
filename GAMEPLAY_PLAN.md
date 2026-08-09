@@ -12,6 +12,19 @@ Target session shape:
 - Customers wait indefinitely; passing on a sale is neutral.
 - Plants can become stressed, but never die or decay while the game is closed.
 
+## Implemented foundation — save version 4
+
+The first shared milestone from this plan and the attached 35-day campaign plan is now playable:
+
+- deterministic morning customer forecast and three nursery lots;
+- wholesale invoices, per-plant acquisition cost, 12-plant capacity, and persistent unsold stock;
+- preparation phase with animated cartons, species-specific care, arrangement mode, and atomic display/bench swaps;
+- shade, indirect, and sun slots with readable ideal/tolerable/poor fit;
+- manual Open Shop transition, three sequential customers, protected remaining-customer stock, and a cost-aware report;
+- Bloom reputation standings and version-3-to-version-4 save migration.
+
+The combined direction remains: this repository plan supplies the light business spine, while the attached plan supplies the 35-day campaign, relationships, plant growth, potting, journal, workshops, and finale. Matching plants to people stays the primary pleasure; commerce stays legible and light. Three customers remain the calm daily baseline, with a fourth reserved for later upgrades or events. Staff management is not part of the combined scope.
+
 ## The richer daily loop
 
 1. **Plan the day.** Read a small weather and demand forecast, then choose one nursery lot.
@@ -21,7 +34,7 @@ Target session shape:
 5. **Work the bench.** Between customers, repot, propagate, or rehabilitate one plant.
 6. **Close the shop.** Review revenue, stock cost, operating cost, net profit, reputation, and weekly-order progress.
 
-Four customers per day is the initial target. Later improvements can raise that to five or six.
+Three customers per day is the baseline. Later improvements can add a fourth visitor through an upgrade or special event.
 
 ## Core management systems
 
@@ -163,32 +176,32 @@ This is the first priority because it creates a complete management game using t
 ### Phase 4 — Growing the business
 
 - Add new shelf modules and movable display fixtures.
-- Add staff shifts and upgrade branches.
+- Add upgrade branches that change the room and shop routine.
 - Add seasonal demand, larger contracts, and a modest shop expansion.
 
 ## Recommended next implementation slice
 
-Build these three systems together after the current character and plant art pass:
+Finish the second half of the core decision chain without starting the large campaign systems yet:
 
-1. light-aware placement and forgiving condition;
-2. supplier ordering with wholesale cost and persistent stock;
-3. price bands with visible customer budgets and archetypes.
+1. add Quick/Fair/Boutique price tags and visible customer budgets;
+2. give the six recurring neighbors distinct shopping archetypes and one small piece of remembered visit history;
+3. introduce a five-day week shell with one simple weekly shop objective and Friday recap.
 
-Together they create the game’s core decision chain:
+That extends the now-playable chain into:
 
-**forecast and buy → place and care → price and recommend**
+**forecast and buy → place and care → price and recommend → remember and plan tomorrow**
 
-The required UI can stay small: one morning clipboard with three supplier cards, temporary light-fit halos while placing, and compact plant/customer cards. No permanent inventory spreadsheet is necessary.
+Potting, growth stages, propagation, the journal, workshops, and the 35-day finale should follow only after this commercial/relationship loop is tuned.
 
-## Save-data direction
+## Save-data direction beyond version 4
 
-A future version-4 save should add stable species IDs and the following state:
+A later save version can extend the current stable species IDs and plant schema with:
 
 - calendar: week, weekday, seed, forecast, and event;
 - plant: wholesale cost, price band, life stage, vitality, hydration, root comfort, pot, parent, bench status, and slot;
 - shop: fixture unlocks, featured trait, and inventory capacity;
 - commerce: supplier relationships, deliveries, active order, held stock, revenue, cost of goods, and expenses;
 - community: Bloom, customer relationships, unlocked species, and story flags;
-- operations: upgrades, today’s staff role, and bench queue.
+- operations: upgrades, workshop schedule, and bench queue.
 
 Existing saves can migrate by assigning current plants Mature, deriving vitality from hydration, setting Fair pricing, estimating wholesale cost at 45% of current retail, and preserving every slot and upgrade.

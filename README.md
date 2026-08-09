@@ -1,6 +1,6 @@
 # Mostly Alive Plants
 
-A cozy, low-pressure 3D plant-shop game that runs entirely in the browser. Unpack a nursery delivery, give each plant a little attention, arrange the shop, and match odd neighbors with the greenery they need.
+A cozy, low-pressure 3D plant-shop game that runs entirely in the browser. Read the neighborhood forecast, buy a nursery lot, prepare and arrange the stock, then match odd neighbors with the greenery they need.
 
 ## Play
 
@@ -19,14 +19,14 @@ Then visit `http://127.0.0.1:4173/`.
 
 ## The day loop
 
-1. Unpack three mystery plants.
-2. Read the soil condition: thirsty plants visibly droop and perk back up after watering.
-3. Water the soil, mist the canopy, or prune at the care bench—each action has its own effect.
-4. Arrange deliveries to complete a small daily display vignette.
-5. Meet each customer’s required trait, then chase optional trait, care, and thriving bonuses for a perfect match.
-6. Earn coins and Community Bloom, encounter the moon moth, and improve the shop with a grow lamp or rain barrel.
+1. Read three customer needs in the morning forecast and choose a Reliable Tray, Curated Pair, discounted Mystery Rescue Lot, or—when the shop is already prepared—use current stock.
+2. Pay the nursery invoice, open the animated cartons, and watch each distinct plant move onto the care bench.
+3. Read soil and species preferences: thirsty plants visibly droop, watering and misting have distinct effects, and only useful care earns Bloom.
+4. Arrange or swap stock across shade, indirect, and sunny displays. Colored rings show light fit while a separate pulse marks the daily display vignette.
+5. Manually open the shop, then meet each customer’s required trait without using a plant that the remaining queue still needs.
+6. Chase optional trait, care, and thriving bonuses, build Bloom reputation, and review revenue, sold-stock cost, gross profit, nursery spend, and ending inventory at close.
 
-Progress, sound preference, living plant condition, and upgrades are stored locally in the browser.
+The current phase, unsold inventory, living plant condition, finances, sound preference, and upgrades are stored locally in the browser.
 
 ## Technical notes
 

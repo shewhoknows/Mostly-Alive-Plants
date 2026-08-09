@@ -83,6 +83,7 @@ function freshState() {
     dailyStockCost: 0,
     dailyCostOfGoods: 0,
     dailyStartingCoins: 42,
+    accountingEstimate: false,
     dailyBloomStart: 8,
     dailyCare: 0,
     dailyPerfects: 0,
@@ -113,10 +114,10 @@ function loadState() {
     }) : [];
     const migratedPhase = oldVersion >= 4 && ["supply", "preparation", "open", "report"].includes(value.phase)
       ? value.phase
-      : Number(value.crates) > 0
-        ? "preparation"
-        : Number(value.customerIndex) >= 3
-          ? "report"
+      : Number(value.customerIndex) >= 3
+        ? "report"
+        : Number(value.crates) > 0
+          ? "preparation"
           : "open";
     const occupiedSlots = new Set();
     const inventory = value.inventory.map((plant) => {
@@ -161,6 +162,16 @@ function loadState() {
         status: "boxed",
       } : entry)
       : [];
+    const legacyRevenue = Number.isFinite(value.dailyRevenue) ? value.dailyRevenue : 0;
+    const hasLegacySales = oldVersion < 4 && Number(value.dailySales) > 0;
+    const migratedCostOfGoods = Number.isFinite(value.dailyCostOfGoods)
+      ? value.dailyCostOfGoods
+      : hasLegacySales ? Math.round(legacyRevenue * 0.45) : 0;
+    const migratedStartingCoins = Number.isFinite(value.dailyStartingCoins)
+      ? value.dailyStartingCoins
+      : oldVersion < 4 && Number.isFinite(value.coins)
+        ? value.coins - legacyRevenue
+        : Number.isFinite(value.coins) ? value.coins : base.coins;
     return {
       ...base,
       ...value,
@@ -170,8 +181,9 @@ function loadState() {
       selectedLotId: value.selectedLotId || null,
       inventoryCapacity: Number.isFinite(value.inventoryCapacity) ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity) : INVENTORY_CAPACITY,
       dailyStockCost: Number.isFinite(value.dailyStockCost) ? value.dailyStockCost : 0,
-      dailyCostOfGoods: Number.isFinite(value.dailyCostOfGoods) ? value.dailyCostOfGoods : 0,
-      dailyStartingCoins: Number.isFinite(value.dailyStartingCoins) ? value.dailyStartingCoins : Number.isFinite(value.coins) ? value.coins : base.coins,
+      dailyCostOfGoods: migratedCostOfGoods,
+      dailyStartingCoins: migratedStartingCoins,
+      accountingEstimate: Boolean(value.accountingEstimate || hasLegacySales),
       dailyBloomStart: Number.isFinite(value.dailyBloomStart) ? value.dailyBloomStart : Number.isFinite(value.bloom) ? value.bloom : base.bloom,
       upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
       customers,
@@ -385,6 +397,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
       if (!state.displayGoal && state.crateQueue.length) state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+      if (state.phase === "preparation" && state.crates === 0 && !state.displayGoal) {
+        state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+      }
       return;
     }
     const rng = seeded(state.day * 9187 + 41);
@@ -416,9 +431,11 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
     if (state.inventoryCapacity - state.inventory.length < 3 && state.inventory.length >= 3) {
-      const offset = Math.floor(rng() * state.inventory.length);
+      const displayedStock = state.inventory.filter((plant) => Number.isInteger(plant.slot));
+      const stockPool = displayedStock.length >= 3 ? displayedStock : state.inventory;
+      const offset = Math.floor(rng() * stockPool.length);
       state.customers = state.customers.map((customer, index) => {
-        const stockPlant = state.inventory[(offset + index) % state.inventory.length];
+        const stockPlant = stockPool[(offset + index) % stockPool.length];
         const stockSpecies = speciesOfName(stockPlant.species);
         const need = stockSpecies.traits[Math.floor(rng() * stockSpecies.traits.length)];
         return {
@@ -780,16 +797,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function conditionOf(plant) {
     const fit = lightFit(plant);
+    if (plant.hydration < 42) return { label: "drooping", icon: "○" };
+    if (fit.level === "poor") return { label: "light-stressed", icon: "◐" };
     if (plant.recoveredToday && fit.level !== "poor") return { label: "recovering", icon: "◕" };
     if (plant.hydration >= 68 && fit.level === "ideal") return { label: "thriving", icon: "●" };
-    if (plant.hydration >= 68 && fit.level === "poor") return { label: "light-stressed", icon: "◐" };
-    if (plant.hydration >= 68) return { label: "comfortable", icon: "◐" };
-    if (plant.hydration >= 42) return { label: "comfortable", icon: "◐" };
-    return { label: "drooping", icon: "○" };
+    return { label: "comfortable", icon: "◐" };
   }
 
   function carePastTense(care) {
-    return care === "water" ? "watered" : care === "mist" ? "misted" : "pruned";
+    return care === "water" ? "well-watered" : care === "mist" ? "misted" : "pruned";
   }
 
   function createPlant(plant) {
@@ -1095,7 +1111,9 @@ document.addEventListener("DOMContentLoaded", () => {
     state.crates = state.crateQueue.length;
     state.deliveryCondition = lot.condition || "healthy";
     state.phase = "preparation";
-    state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+    state.displayGoal = lot.reveal?.level === "count-only"
+      ? null
+      : makeDisplayGoal(seeded(state.day * 1999 + 73));
     run.arranging = true;
     ui.supplierOptions.querySelectorAll("button").forEach((item) => {
       item.disabled = true;
@@ -1125,7 +1143,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function openShop() {
     if (state.phase !== "preparation" || state.crates > 0 || run.crateAnimation) return;
-    if (!inventoryCoversCustomers(state.inventory, state.customers)) {
+    if (!inventoryCoversCustomers(state.inventory, state.customers.slice(state.customerIndex))) {
       sound("error");
       toast("The neighborhood notes are not covered yet. Check that every carton made it onto the bench.");
       return;
@@ -1170,6 +1188,24 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (!anyModalOpen && run.modalReturnFocus instanceof HTMLElement) {
       run.modalReturnFocus.focus();
       run.modalReturnFocus = null;
+    }
+  }
+
+  function currentOpenModal() {
+    return [ui.supplierBoard, ui.report, ui.upgradeModal, ui.helpModal]
+      .find((modal) => modal && !modal.hidden) || null;
+  }
+
+  function trapModalFocus(event, modal) {
+    const focusable = [...modal.querySelectorAll("button:not([disabled]):not([hidden]), [href], [tabindex]:not([tabindex='-1'])")]
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!modal.contains(active) || (!event.shiftKey && active === last) || (event.shiftKey && active === first)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
     }
   }
 
@@ -1402,8 +1438,47 @@ document.addEventListener("DOMContentLoaded", () => {
     const other = state.inventory.find((plant) => plant.id === targetId);
     if (!carried || !other || !Number.isInteger(other.slot)) return;
     if (!Number.isInteger(run.moveOrigin)) {
-      sound("error");
-      toast("A new delivery needs an empty display first; placed plants can then swap freely.");
+      const destinationIndex = other.slot;
+      const destination = SLOT_DATA[destinationIndex];
+      const carriedObject = plantObjects.get(carried.id);
+      const otherObject = plantObjects.get(other.id);
+      const looseCount = state.inventory.filter((plant) => !Number.isInteger(plant.slot)
+        && plant.id !== carried.id
+        && plant.id !== other.id).length;
+      const bench = staging[looseCount % staging.length];
+      carried.slot = destinationIndex;
+      other.slot = null;
+      if (carriedObject) queueMover({
+        object: carriedObject,
+        from: carriedObject.position.clone(),
+        to: new THREE.Vector3(destination.x, destination.y, destination.z),
+        startScale: carriedObject.scale.x,
+        endScale: scaleForSlot(carriedObject, destination),
+        time: 0,
+        duration: 0.5,
+        arc: 0.62,
+      });
+      if (otherObject) queueMover({
+        object: otherObject,
+        from: otherObject.position.clone(),
+        to: bench.clone(),
+        startScale: otherObject.scale.x,
+        endScale: 0.78,
+        time: 0,
+        duration: 0.5,
+        arc: 0.52,
+      });
+      const goalWon = evaluateDisplayGoal(carried, destination);
+      run.carried = null;
+      run.moveOrigin = null;
+      run.selected = carriedObject ? { kind: "plant", id: carried.id, object: carriedObject } : null;
+      save();
+      sound(goalWon ? "upgrade" : "place");
+      toast(goalWon
+        ? `The bench swap completes the vignette. +${state.displayGoal.rewardCoins} coins and +${state.displayGoal.rewardBloom} Bloom.`
+        : `${carried.species} takes the display; ${other.species} waits on the care bench.`);
+      updateSlotGlow();
+      updateUi();
       return;
     }
     const destinationIndex = other.slot;
@@ -1575,6 +1650,10 @@ document.addEventListener("DOMContentLoaded", () => {
     run.selected = { kind: "plant", id: plant.id, object };
     run.carried = plant.id;
     document.body.dataset.selection = "plant";
+    if (state.crates === 0 && !state.displayGoal) {
+      state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+      save();
+    }
     updateCrates();
     updateSelectionRing();
     updateSlotGlow();
@@ -1727,9 +1806,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     run.busy = true;
     const careCount = speciesOf(plant).beneficialCare.filter((care) => plant.care[care]).length;
+    const careWishMet = person.careWish === "water"
+      ? plant.hydration >= 78 || plant.care.water
+      : speciesOf(plant).beneficialCare.includes(person.careWish) && plant.care[person.careWish];
     const extras = [
       plant.traits.includes(person.bonusTrait),
-      Boolean(speciesOf(plant).beneficialCare.includes(person.careWish) && plant.care[person.careWish]),
+      Boolean(careWishMet),
       conditionOf(plant).label === "thriving",
     ].filter(Boolean).length;
     const perfect = extras === 3;
@@ -1904,8 +1986,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const idealDisplays = state.inventory.filter((plant) => Number.isInteger(plant.slot) && lightFit(plant).level === "ideal").length;
       const standing = bloomStanding();
       const flourish = state.dailyCare >= 6 ? "The leaves are immaculate." : "A few leaves could use attention tomorrow.";
-      const display = state.displayGoal?.claimed ? "Display challenge complete." : "The display challenge can try again tomorrow.";
-      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins revenue − ${state.dailyCostOfGoods} sold-stock cost = ${grossProfit >= 0 ? "+" : ""}${grossProfit} gross profit · ${state.dailyStockCost} coins spent at the nursery · ${tillChange >= 0 ? "+" : ""}${tillChange} till change · +${bloomEarned} Bloom · ${state.inventory.length} plants remain in stock · ${idealDisplays} in ideal light · ${state.dailyCare} helpful care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. Shop standing: ${standing.name} · ${standing.copy}. ${display} ${flourish}`;
+      const display = !state.displayGoal
+        ? "No display challenge was set."
+        : state.displayGoal.claimed ? "Display challenge complete." : "The display challenge can try again tomorrow.";
+      const estimate = state.accountingEstimate ? " (partly estimated from the previous save)" : "";
+      const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"} remain${state.inventory.length === 1 ? "s" : ""} in stock`;
+      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins revenue − ${state.dailyCostOfGoods} sold-stock cost${estimate} = ${grossProfit >= 0 ? "+" : ""}${grossProfit} gross profit · ${state.dailyStockCost} coins spent at the nursery · ${tillChange >= 0 ? "+" : ""}${tillChange} till change · +${bloomEarned} Bloom · ${stockCopy} · ${idealDisplays} in ideal light · ${state.dailyCare} helpful care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. Shop standing: ${standing.name} · ${standing.copy}. ${display} ${flourish}`;
     }
     sound("report");
     save();
@@ -1919,6 +2005,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyRevenue = 0;
     state.dailyStockCost = 0;
     state.dailyCostOfGoods = 0;
+    state.accountingEstimate = false;
     state.dailyCare = 0;
     state.dailyPerfects = 0;
     state.dailyRecoveries = 0;
@@ -1989,7 +2076,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (ui.arrangeButton) {
       const active = state.phase === "preparation" || run.arranging;
-      ui.arrangeButton.hidden = !run.started || state.phase === "supply" || state.phase === "report";
+      ui.arrangeButton.hidden = !run.started || state.phase === "supply" || state.phase === "preparation" || state.phase === "report";
       ui.arrangeButton.setAttribute("aria-pressed", String(active));
       ui.arrangeButton.classList.toggle("is-active", active);
       ui.arrangeButton.title = active ? "Finish arranging displays" : "Arrange displays";
@@ -1997,7 +2084,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ui.openShop) {
       const readyToOpen = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
       ui.openShop.hidden = !readyToOpen;
-      ui.openShop.disabled = !readyToOpen || !inventoryCoversCustomers(state.inventory, state.customers);
+      ui.openShop.disabled = !readyToOpen || !inventoryCoversCustomers(state.inventory, state.customers.slice(state.customerIndex));
     }
 
     let action = "Select something";
@@ -2037,7 +2124,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
-          disabled = !Number.isInteger(run.moveOrigin) || !Number.isInteger(plant.slot);
+          disabled = !Number.isInteger(plant.slot);
         } else if (run.carried === plant.id) {
           action = "Choose a glowing display spot";
           disabled = true;
@@ -2084,7 +2171,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ? Boolean(plant?.care.water && plant.hydration >= 78)
         : Boolean(plant?.care[care]);
       const needed = care === "water"
-        ? Boolean(plant && (!plant.care.water || plant.hydration < 78))
+        ? Boolean(plant && plant.hydration < 78)
         : Boolean(plant && beneficial && !plant.care[care]);
       ui.care[care].disabled = !plant || run.busy;
       ui.care[care].classList.toggle("is-done", done);
@@ -2255,12 +2342,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function keyDown(event) {
-    if (event.key === "Escape") {
-      openModal(ui.upgradeModal, false);
-      openModal(ui.helpModal, false);
+    const modal = currentOpenModal();
+    if (modal && event.key === "Tab") {
+      trapModalFocus(event, modal);
       return;
     }
-    if (!ui.helpModal?.hidden || !ui.upgradeModal?.hidden || !ui.report?.hidden || !ui.supplierBoard?.hidden) return;
+    if (event.key === "Escape") {
+      if (modal === ui.upgradeModal) openModal(ui.upgradeModal, false);
+      if (modal === ui.helpModal) openModal(ui.helpModal, false);
+      return;
+    }
+    if (modal) return;
     if (!run.started || event.target instanceof HTMLInputElement) return;
     if (event.key === "1") careForPlant("water");
     if (event.key === "2") careForPlant("mist");
@@ -2416,6 +2508,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function queueMover(move) {
+    const stationaryMove = move.from.distanceToSquared(move.to) < 0.000001;
     for (let index = movers.length - 1; index >= 0; index -= 1) {
       const current = movers[index];
       if (current.object !== move.object) continue;
@@ -2424,6 +2517,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (current.remove) current.object.removeFromParent();
       movers.splice(index, 1);
     }
+    move.from = move.object.position.clone();
+    move.startScale = move.object.scale.x;
+    if (stationaryMove) move.to = move.object.position.clone();
     movers.push(move);
   }
 
