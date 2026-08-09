@@ -70,7 +70,18 @@ function bufferedQuickPrice(species) {
   return askingPrice({ price: species.price, priceBand: "quick" }, species) + 3;
 }
 
-function briefOptions({ person, speciesEntries, templates, unlockedTraits }) {
+function worstCasePrice(species, priceBand) {
+  return askingPrice({ price: species.price + 3, priceBand }, species);
+}
+
+function briefOptions({
+  person,
+  speciesEntries,
+  templates,
+  unlockedTraits,
+  objectivePriceBand = null,
+  allowOwnedBudgetStretch = true,
+}) {
   const [, maximumBudget] = customerBudgetRange(person);
   const options = [];
 
@@ -86,11 +97,16 @@ function briefOptions({ person, speciesEntries, templates, unlockedTraits }) {
 
     speciesEntries.forEach((entry) => {
       const species = entry.species;
-      const actualQuickPrice = entry.plant
-        ? askingPrice({ ...entry.plant, priceBand: "quick" }, species)
+      const priceBand = objectivePriceBand || "quick";
+      const catalogFloor = objectivePriceBand
+        ? worstCasePrice(species, priceBand)
+        : bufferedQuickPrice(species);
+      const actualPrice = entry.plant
+        ? askingPrice({ ...entry.plant, priceBand }, species)
         : 0;
-      const budgetFloor = Math.max(bufferedQuickPrice(species), actualQuickPrice);
-      if (!entry.plant && budgetFloor > maximumBudget) return;
+      const budgetFloor = Math.max(catalogFloor, actualPrice);
+      const canStretchBudget = Boolean(entry.plant && allowOwnedBudgetStretch && !objectivePriceBand);
+      if (!canStretchBudget && budgetFloor > maximumBudget) return;
       requiredTraits.filter((trait) => species.traits.includes(trait)).forEach((need) => {
         const distinctPreferred = preferredTraits.filter((trait) => trait !== need && species.traits.includes(trait));
         const distinctFallback = species.traits.filter((trait) => trait !== need);
@@ -102,6 +118,9 @@ function briefOptions({ person, speciesEntries, templates, unlockedTraits }) {
           bonusTrait,
           budgetFloor,
           ownedStock: Boolean(entry.plant),
+          canStretchBudget,
+          objectivePriceBand,
+          stockKey: entry.plant ? entry.plant.id || entry.stockIndex : null,
         });
       });
     });
@@ -110,20 +129,33 @@ function briefOptions({ person, speciesEntries, templates, unlockedTraits }) {
   return options;
 }
 
-function chooseBriefOption(options, day, person, slot, usedBriefIds) {
+function orderedBriefOptions(options, day, person, slot, usedBriefIds) {
   const unused = options.filter((option) => !usedBriefIds.has(option.template.id));
-  const pool = unused.length ? unused : options;
-  if (!pool.length) return null;
-  const ordered = deterministicOrder(
+  const repeated = options.filter((option) => usedBriefIds.has(option.template.id));
+  const order = (pool, suffix) => deterministicOrder(
     pool,
-    `brief|${day}|${person.id}|${slot}`,
+    `brief|${day}|${person.id}|${slot}${suffix}`,
     (option) => `${option.template.id}|${option.species.id}|${option.need}|${option.bonusTrait}`,
   );
-  return ordered[0];
+  return unused.length
+    ? [...order(unused, ""), ...order(repeated, "|repeat")]
+    : order(repeated, "");
+}
+
+function chooseBriefOption(options, day, person, slot, usedBriefIds) {
+  return orderedBriefOptions(options, day, person, slot, usedBriefIds)[0] || null;
 }
 
 function makeBrief(person, option, { day, slot, customerMemory }) {
-  const { template, species, need, bonusTrait, budgetFloor, ownedStock } = option;
+  const {
+    template,
+    species,
+    need,
+    bonusTrait,
+    budgetFloor,
+    canStretchBudget,
+    objectivePriceBand,
+  } = option;
   const memory = memoryForCustomer(customerMemory, person);
   const visits = Math.max(0, Math.floor(Number(memory.visits) || 0));
   const purchases = Math.max(0, Math.floor(Number(memory.purchases) || 0));
@@ -137,7 +169,7 @@ function makeBrief(person, option, { day, slot, customerMemory }) {
   const positionValue = Number(template.strategy?.budget?.position);
   const position = Number.isFinite(positionValue) ? Math.max(0, Math.min(1, positionValue)) : 0.5;
   const positionedBudget = Math.round(minimumBudget + (maximumBudget - minimumBudget) * position);
-  const budget = ownedStock
+  const budget = canStretchBudget
     ? Math.max(minimumBudget, positionedBudget, budgetFloor)
     : Math.min(maximumBudget, Math.max(minimumBudget, positionedBudget, budgetFloor));
   const careOptions = Array.isArray(species.beneficialCare) && species.beneficialCare.length
@@ -159,7 +191,99 @@ function makeBrief(person, option, { day, slot, customerMemory }) {
     line,
     isReturning,
     visitNumber,
+    ...(objectivePriceBand ? {
+      boutiqueReady: objectivePriceBand === "boutique",
+      objectivePriceBand,
+    } : {}),
   };
+}
+
+function boutiqueQuotaForDay(calendar, count) {
+  const objective = createWeeklyObjective(calendar.week);
+  if (objective?.metric !== "boutiqueSales") return 0;
+  const dailyBase = Math.floor(objective.target / WEEKDAYS.length);
+  const remainder = objective.target % WEEKDAYS.length;
+  return Math.min(count, dailyBase + (calendar.weekdayIndex < remainder ? 1 : 0));
+}
+
+function generateBoutiqueBriefs({
+  calendar,
+  safeCount,
+  inventory,
+  capacity,
+  customerMemory,
+  people,
+  speciesEntries,
+  stockEntries,
+  templates,
+  unlockedTraits,
+  boutiqueQuota,
+}) {
+  const capacityValue = Number(capacity);
+  const safeCapacity = Number.isFinite(capacityValue)
+    ? Math.max(0, Math.floor(capacityValue))
+    : INVENTORY_CAPACITY;
+  const freeCapacity = Math.max(0, safeCapacity - inventory.length);
+  const desiredStockBriefs = stockEntries.length
+    ? Math.min(safeCount, stockEntries.length, Math.max(1, safeCount - freeCapacity))
+    : 0;
+  const assignments = [];
+  const usedPeople = new Set();
+  const usedStock = new Set();
+
+  function visit(slot, stockCount) {
+    if (slot >= safeCount) return stockCount >= desiredStockBriefs;
+    const isBoutiqueBrief = slot < boutiqueQuota;
+    const remainingAfterThis = safeCount - slot - 1;
+    const stockStillNeeded = Math.max(0, desiredStockBriefs - stockCount);
+    const mustUseStock = stockStillNeeded > remainingAfterThis;
+    const availableStock = stockEntries.filter((entry) => {
+      const key = entry.plant.id || entry.stockIndex;
+      return !usedStock.has(key);
+    });
+    const sources = mustUseStock
+      ? availableStock.map((entry) => [entry])
+      : stockCount < desiredStockBriefs || isBoutiqueBrief
+        ? [...availableStock.map((entry) => [entry]), speciesEntries]
+        : [speciesEntries, ...availableStock.map((entry) => [entry])];
+
+    for (const person of people) {
+      if (usedPeople.has(person.id)) continue;
+      for (const source of sources) {
+        const options = briefOptions({
+          person,
+          speciesEntries: source,
+          templates,
+          unlockedTraits,
+          objectivePriceBand: isBoutiqueBrief ? "boutique" : null,
+          // Boutique weeks never write a budget above the person's declared
+          // range, including briefs matched from migrated stock.
+          allowOwnedBudgetStretch: false,
+        });
+        const usedBriefIds = new Set(assignments.map((assignment) => assignment.chosen.template.id));
+        const ordered = orderedBriefOptions(options, calendar.day, person, slot, usedBriefIds);
+        for (const chosen of ordered) {
+          const stockKey = chosen.stockKey;
+          if (stockKey !== null && usedStock.has(stockKey)) continue;
+          assignments.push({ person, chosen });
+          usedPeople.add(person.id);
+          if (stockKey !== null) usedStock.add(stockKey);
+          if (visit(slot + 1, stockCount + (stockKey !== null ? 1 : 0))) return true;
+          assignments.pop();
+          usedPeople.delete(person.id);
+          if (stockKey !== null) usedStock.delete(stockKey);
+        }
+      }
+    }
+    return false;
+  }
+
+  if (!visit(0, 0)) return [];
+  return assignments.map(({ person, chosen }, slot) => makeBrief(person, chosen, {
+    day: calendar.day,
+    slot,
+    customerMemory,
+  }));
 }
 
 export function calendarForDay(day) {
@@ -229,6 +353,23 @@ export function generateCustomerBriefs({
     (entry) => `${entry.species.id}|${entry.plant.id || entry.stockIndex}`,
   );
   stockEntries.forEach((entry) => entry.species.traits.forEach((trait) => unlockedTraits.add(trait)));
+  const boutiqueQuota = boutiqueQuotaForDay(calendar, safeCount);
+  if (boutiqueQuota) {
+    const boutiqueBriefs = generateBoutiqueBriefs({
+      calendar,
+      safeCount,
+      inventory: Array.isArray(inventory) ? inventory : [],
+      capacity,
+      customerMemory,
+      people,
+      speciesEntries,
+      stockEntries,
+      templates,
+      unlockedTraits,
+      boutiqueQuota,
+    });
+    if (boutiqueBriefs.length === safeCount) return boutiqueBriefs;
+  }
   const briefs = [];
   const usedPeople = new Set();
   const usedBriefIds = new Set();

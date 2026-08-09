@@ -2,6 +2,7 @@ import * as THREE from "./vendor/three.module.min.js";
 import { createCharacter3D, animateCharacter3D } from "./character-models.js";
 import { createDistinctPlant3D } from "./plant-models.js";
 import {
+  PRICE_BANDS,
   CARES,
   CUSTOMERS,
   INVENTORY_CAPACITY,
@@ -10,6 +11,15 @@ import {
   SPECIES,
 } from "./game-data.js";
 import { generateSupplierLots, inventoryCoversCustomers } from "./supplier-system.js";
+import {
+  askingPrice,
+  calendarForDay,
+  createWeeklyObjective,
+  freshWeekStats,
+  generateCustomerBriefs,
+  progressWeeklyObjective,
+  weeklyObjectiveLabel,
+} from "./progression-system.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
@@ -77,6 +87,11 @@ function freshState() {
     phase: "supply",
     supplierOptions: [],
     selectedLotId: null,
+    week: 1,
+    weekdayIndex: 0,
+    weeklyObjective: createWeeklyObjective(1),
+    weekStats: freshWeekStats(1),
+    customerMemory: {},
     customerIndex: 0,
     dailySales: 0,
     dailyRevenue: 0,
@@ -102,9 +117,19 @@ function loadState() {
     const oldVersion = Number(value.version) || 1;
     const customers = Array.isArray(value.customers) ? value.customers.map((customer, index) => {
       const species = SPECIES.find((item) => item.name === customer.speciesHint) || SPECIES[index % SPECIES.length];
+      const named = CUSTOMERS.find((item) => item.id === customer.id || item.name === customer.name) || CUSTOMERS[index % CUSTOMERS.length];
       const need = customer.need || species.traits[0];
+      const budgetFloor = Math.round(species.price * PRICE_BANDS.quick.multiplier) + 3;
+      const budgetRange = named.budgetRange || [budgetFloor, budgetFloor + 8];
       return {
+        ...named,
         ...customer,
+        id: customer.id || named.id,
+        archetype: customer.archetype || named.archetype,
+        budgetRange,
+        budget: Number.isFinite(customer.budget)
+          ? customer.budget
+          : Math.max(budgetFloor, Math.round((budgetRange[0] + budgetRange[1]) / 2)),
         need,
         bonusTrait: customer.bonusTrait || species.traits.find((trait) => trait !== need) || species.traits[0],
         careWish: species.beneficialCare.includes(customer.careWish)
@@ -128,7 +153,7 @@ function loadState() {
       if (validSlot) occupiedSlots.add(plant.slot);
       const colorShift = Number.isFinite(plant.colorShift) ? plant.colorShift : 0;
       return {
-        priceBand: "fair",
+        priceBand: PRICE_BANDS[plant.priceBand] ? plant.priceBand : "fair",
         lifeStage: "mature",
         rootComfort: "comfortable",
         pot: "nursery-terracotta",
@@ -172,21 +197,49 @@ function loadState() {
       : oldVersion < 4 && Number.isFinite(value.coins)
         ? value.coins - legacyRevenue
         : Number.isFinite(value.coins) ? value.coins : base.coins;
+    const calendar = calendarForDay(value.day);
+    const weekStats = value.weekStats?.week === calendar.week
+      ? { ...freshWeekStats(calendar.week), ...value.weekStats }
+      : freshWeekStats(calendar.week);
+    const weeklyObjective = value.weeklyObjective?.week === calendar.week
+      ? { ...createWeeklyObjective(calendar.week), ...value.weeklyObjective }
+      : createWeeklyObjective(calendar.week);
+    const inventoryCapacity = Number.isFinite(value.inventoryCapacity)
+      ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity)
+      : INVENTORY_CAPACITY;
+    const customerMemory = value.customerMemory && typeof value.customerMemory === "object"
+      ? value.customerMemory
+      : {};
+    const refreshUnopenedBriefs = migratedPhase === "supply" && (oldVersion < 5 || !value.weeklyObjective);
+    const migratedCustomers = refreshUnopenedBriefs
+      ? generateCustomerBriefs({
+        day: calendar.day,
+        inventory,
+        capacity: inventoryCapacity,
+        customerMemory,
+        count: 3,
+      })
+      : customers;
     return {
       ...base,
       ...value,
       version: SAVE_VERSION,
+      week: calendar.week,
+      weekdayIndex: calendar.weekdayIndex,
+      weeklyObjective,
+      weekStats,
+      customerMemory,
       phase: migratedPhase,
-      supplierOptions: Array.isArray(value.supplierOptions) ? value.supplierOptions : [],
+      supplierOptions: oldVersion >= 5 && value.weeklyObjective && Array.isArray(value.supplierOptions) ? value.supplierOptions : [],
       selectedLotId: value.selectedLotId || null,
-      inventoryCapacity: Number.isFinite(value.inventoryCapacity) ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity) : INVENTORY_CAPACITY,
+      inventoryCapacity,
       dailyStockCost: Number.isFinite(value.dailyStockCost) ? value.dailyStockCost : 0,
       dailyCostOfGoods: migratedCostOfGoods,
       dailyStartingCoins: migratedStartingCoins,
       accountingEstimate: Boolean(value.accountingEstimate || hasLegacySales),
       dailyBloomStart: Number.isFinite(value.dailyBloomStart) ? value.dailyBloomStart : Number.isFinite(value.bloom) ? value.bloom : base.bloom,
       upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
-      customers,
+      customers: migratedCustomers,
       crateQueue,
       crates: crateQueue.length,
       inventory,
@@ -233,11 +286,13 @@ document.addEventListener("DOMContentLoaded", () => {
     loading: $("loading-progress") || $("status"),
     game: $("game-ui"),
     day: $("topbar-day"),
+    week: $("topbar-week"),
     coins: $("topbar-coins"),
     bloom: $("topbar-bloom"),
     taskCard: document.querySelector(".task-card"),
     taskTitle: $("task-title"),
     taskCopy: $("task-copy"),
+    weekObjective: $("week-objective"),
     openShop: $("open-shop-button"),
     action: $("action-button"),
     careTray: $("care-tray"),
@@ -245,7 +300,14 @@ document.addEventListener("DOMContentLoaded", () => {
     customerCard: $("customer-card"),
     customerAvatar: document.querySelector(".customer-avatar"),
     customerName: $("customer-name"),
+    customerMeta: $("customer-meta"),
     customerRequest: $("customer-request"),
+    customerMust: $("customer-must"),
+    customerWish: $("customer-wish"),
+    customerBudget: $("customer-budget"),
+    priceTray: $("price-tray"),
+    priceAmount: $("price-amount"),
+    priceButtons: [...document.querySelectorAll("[data-price-band]")],
     toast: $("toast"),
     report: $("day-report"),
     reportTitle: $("report-title"),
@@ -391,6 +453,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setupDay(force = false) {
+    const calendar = calendarForDay(state.day);
+    state.week = calendar.week;
+    state.weekdayIndex = calendar.weekdayIndex;
+    if (!state.weeklyObjective || state.weeklyObjective.week !== calendar.week) {
+      state.weeklyObjective = createWeeklyObjective(calendar.week);
+    }
+    if (!state.weekStats || state.weekStats.week !== calendar.week) {
+      state.weekStats = freshWeekStats(calendar.week);
+    }
     if (!force && state.customers?.length === 3 && Array.isArray(state.crateQueue)) {
       if (state.phase === "supply" && !state.supplierOptions?.length) {
         state.supplierOptions = generateSupplierLots({
@@ -405,53 +476,17 @@ document.addEventListener("DOMContentLoaded", () => {
       if (state.phase === "preparation" && state.crates === 0 && !state.displayGoal) {
         state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
       }
+      save();
       return;
     }
-    const rng = seeded(state.day * 9187 + 41);
-    state.customers = [];
+    state.customers = generateCustomerBriefs({
+      day: state.day,
+      inventory: state.inventory,
+      capacity: state.inventoryCapacity,
+      customerMemory: state.customerMemory,
+      count: 3,
+    });
     state.crateQueue = [];
-    const usedPeople = new Set();
-    for (let index = 0; index < 3; index += 1) {
-      const speciesPool = index === 0 ? SPECIES.filter((species) => species.dryRate >= 0.1) : SPECIES;
-      const species = speciesPool[Math.floor(rng() * speciesPool.length)];
-      let personIndex = (Math.floor(rng() * CUSTOMERS.length) + index) % CUSTOMERS.length;
-      while (usedPeople.has(personIndex)) personIndex = (personIndex + 1) % CUSTOMERS.length;
-      usedPeople.add(personIndex);
-      const person = CUSTOMERS[personIndex];
-      const need = species.traits[Math.floor(rng() * species.traits.length)];
-      const bonusTrait = species.traits.find((trait) => trait !== need) || species.traits[0];
-      const careWish = species.beneficialCare[Math.floor(rng() * species.beneficialCare.length)];
-      state.customers.push({ ...person, need, bonusTrait, careWish, speciesHint: species.name });
-    }
-    if (state.inventory.length) {
-      const stockPlant = state.inventory[Math.floor(rng() * state.inventory.length)];
-      const stockSpecies = speciesOfName(stockPlant.species);
-      const need = stockSpecies.traits[Math.floor(rng() * stockSpecies.traits.length)];
-      state.customers[0] = {
-        ...state.customers[0],
-        need,
-        bonusTrait: stockSpecies.traits.find((trait) => trait !== need) || need,
-        careWish: stockSpecies.beneficialCare[Math.floor(rng() * stockSpecies.beneficialCare.length)],
-        speciesHint: stockSpecies.name,
-      };
-    }
-    if (state.inventoryCapacity - state.inventory.length < 3 && state.inventory.length >= 3) {
-      const displayedStock = state.inventory.filter((plant) => Number.isInteger(plant.slot));
-      const stockPool = displayedStock.length >= 3 ? displayedStock : state.inventory;
-      const offset = Math.floor(rng() * stockPool.length);
-      state.customers = state.customers.map((customer, index) => {
-        const stockPlant = stockPool[(offset + index) % stockPool.length];
-        const stockSpecies = speciesOfName(stockPlant.species);
-        const need = stockSpecies.traits[Math.floor(rng() * stockSpecies.traits.length)];
-        return {
-          ...customer,
-          need,
-          bonusTrait: stockSpecies.traits.find((trait) => trait !== need) || need,
-          careWish: stockSpecies.beneficialCare[Math.floor(rng() * stockSpecies.beneficialCare.length)],
-          speciesHint: stockSpecies.name,
-        };
-      });
-    }
     state.phase = "supply";
     state.crates = 0;
     state.selectedLotId = null;
@@ -809,13 +844,39 @@ document.addEventListener("DOMContentLoaded", () => {
     return { label: "comfortable", icon: "◐" };
   }
 
-  function carePastTense(care) {
-    return care === "water" ? "well-watered" : care === "mist" ? "misted" : "pruned";
+  const priceTagColors = { quick: 0x7aa6a0, fair: 0xe0b945, boutique: 0x9a739d };
+
+  function priceBandOf(plant) {
+    return PRICE_BANDS[plant?.priceBand] ? plant.priceBand : "fair";
+  }
+
+  function plantAskingPrice(plant) {
+    return askingPrice(plant, speciesOf(plant));
+  }
+
+  function addPlantPriceTag(root, plant) {
+    const tagRoot = new THREE.Group();
+    tagRoot.name = "plant-price-tag";
+    tagRoot.position.set(0.28, 0.47, 0.31);
+    tagRoot.rotation.y = -0.18;
+    const stringMat = material(0x6d5946, { roughness: 1 });
+    const tagMat = material(priceTagColors[priceBandOf(plant)], { roughness: 0.88 });
+    const string = cylinder(tagRoot, 0.008, 0.008, 0.2, [0, 0.08, -0.01], stringMat, 5);
+    string.rotation.z = 0.24;
+    const tag = box(tagRoot, [0.25, 0.16, 0.025], [0.025, -0.045, 0], tagMat, [0, 0, -0.08]);
+    tag.name = "price-tag-card";
+    root.add(tagRoot);
+  }
+
+  function updatePlantPriceTag(plant) {
+    const tag = plantObjects.get(plant?.id)?.getObjectByName("price-tag-card");
+    if (tag?.material?.color) tag.material.color.setHex(priceTagColors[priceBandOf(plant)]);
   }
 
   function createPlant(plant) {
     const spec = speciesOf(plant);
     const root = createDistinctPlant3D(plant, spec, run.textures);
+    addPlantPriceTag(root, plant);
     root.userData.entity = { kind: "plant", id: plant.id };
     root.userData.plantId = plant.id;
     root.userData.phase = Math.abs(hash(plant.id)) % 100;
@@ -922,6 +983,21 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  function addWeekStat(key, amount = 1) {
+    if (!state.weekStats) state.weekStats = freshWeekStats(calendarForDay(state.day).week);
+    state.weekStats[key] = (Number(state.weekStats[key]) || 0) + amount;
+  }
+
+  function advanceWeekGoal(event) {
+    const result = progressWeeklyObjective(state.weeklyObjective, event);
+    if (!result?.completedNow || state.weeklyObjective.claimed) return "";
+    state.weeklyObjective.claimed = true;
+    const reward = state.weeklyObjective.reward || {};
+    state.coins += Number(reward.coins) || 0;
+    state.bloom += Number(reward.bloom) || 0;
+    return ` Weekly goal complete—+${Number(reward.coins) || 0} coins and +${Number(reward.bloom) || 0} Bloom!`;
+  }
+
   function evaluateDisplayGoal(plant, slot) {
     const goal = state.displayGoal;
     if (!goal || goal.claimed || !plant?.traits.includes(goal.trait) || slot?.zone !== goal.zone) return false;
@@ -937,6 +1013,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.openShop?.addEventListener("click", openShop);
     ui.arrangeButton?.addEventListener("click", toggleArrangement);
     CARES.forEach((care) => ui.care[care]?.addEventListener("click", () => careForPlant(care)));
+    ui.priceButtons.forEach((button) => button.addEventListener("click", () => setPriceBand(button.dataset.priceBand)));
     ui.nextDay?.addEventListener("click", nextDay);
     ui.upgradeButton?.addEventListener("click", () => openModal(ui.upgradeModal, true));
     ui.closeUpgrades?.addEventListener("click", () => openModal(ui.upgradeModal, false));
@@ -1015,12 +1092,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderSupplierBoard() {
     if (!ui.supplierOptions) return;
-    if (ui.supplierTitle) ui.supplierTitle.textContent = `Day ${state.day} nursery clipboard`;
+    const calendar = calendarForDay(state.day);
+    if (ui.supplierTitle) ui.supplierTitle.textContent = `${calendar.weekday} · Week ${calendar.week}`;
     if (ui.supplierForecast) {
       const needs = [...new Set(state.customers.map((customer) => customer.need))];
-      ui.supplierForecast.textContent = `Neighborhood notes: homes are asking for ${needs.join(", ")}. You have ${state.inventory.length}/${state.inventoryCapacity} plants and ${state.coins} coins.`;
+      ui.supplierForecast.textContent = `Neighborhood notes: ${needs.join(", ")}. ${weeklyObjectiveLabel(state.weeklyObjective)}. You have ${state.inventory.length}/${state.inventoryCapacity} plants and ${state.coins} coins.`;
     }
-    if (ui.supplierStatus) ui.supplierStatus.textContent = "Choose one delivery. Unsold plants stay in your shop for later days.";
+    if (ui.supplierStatus) {
+      const newPlants = SPECIES.filter((species) => species.unlockWeek === calendar.week).map((species) => species.name);
+      const newNeighbors = CUSTOMERS.filter((customer) => customer.unlockWeek === calendar.week).map((customer) => customer.name);
+      const arrivalNames = [...newPlants, ...newNeighbors];
+      const arrivals = calendar.isMonday && calendar.week > 1 && arrivalNames.length
+        ? `New this week: ${arrivalNames.join(" · ")}. `
+        : "";
+      ui.supplierStatus.textContent = `${arrivals}Choose one delivery; unsold plants stay in your shop.`;
+    }
     ui.supplierOptions.replaceChildren();
     state.supplierOptions.forEach((lot, index) => {
       const button = document.createElement("button");
@@ -1295,6 +1381,36 @@ document.addEventListener("DOMContentLoaded", () => {
     return state.customers?.[state.customerIndex] || null;
   }
 
+  function customerMemoryFor(person) {
+    const id = person?.id || String(person?.name || "neighbor").toLowerCase();
+    return state.customerMemory[id] || (state.customerMemory[id] = {
+      visits: 0,
+      purchases: 0,
+      satisfaction: 0,
+      lastVisitDay: 0,
+      lastSpecies: null,
+      lastPriceBand: null,
+    });
+  }
+
+  function beginCustomerVisit(person) {
+    if (!person) return;
+    const memory = customerMemoryFor(person);
+    if (memory.lastVisitDay === state.day) return;
+    memory.visits += 1;
+    memory.lastVisitDay = state.day;
+    save();
+  }
+
+  function rememberCustomerSale(person, plant, satisfaction) {
+    const memory = customerMemoryFor(person);
+    memory.purchases += 1;
+    memory.satisfaction += satisfaction;
+    memory.lastSpecies = plant.species;
+    memory.lastPriceBand = priceBandOf(plant);
+    memory.lastVisitDay = state.day;
+  }
+
   function createCustomer(person) {
     const root = createCharacter3D(person, state.day * 101 + state.customerIndex * 17);
     root.userData.entity = { kind: "customer", id: state.customerIndex };
@@ -1333,6 +1449,7 @@ document.addEventListener("DOMContentLoaded", () => {
       showReport();
       return;
     }
+    beginCustomerVisit(person);
     const object = createCustomer(person);
     object.position.set(enter && !reduceMotion ? 6.2 : 0.15, 0, enter && !reduceMotion ? 4.45 : 3.32);
     object.rotation.y = enter && !reduceMotion ? -1.75 : 0.68;
@@ -1403,7 +1520,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } else if (kind === "customer") {
       const person = currentCustomer();
-      toast(`${person.name} is hoping for something ${person.need}. Tap a plant to offer it.`);
+      toast(`${person.name} needs ${person.need}, would love ${person.bonusTrait}, and can spend ${person.budget} coins. Select a plant to recommend it.`, 4400);
       sound("hint");
     } else if (kind === "slot" && run.carried) {
       placePlant(run.carried, id);
@@ -1730,6 +1847,19 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
+  function setPriceBand(band) {
+    if (run.busy || !PRICE_BANDS[band] || run.selected?.kind !== "plant") return;
+    const plant = state.inventory.find((item) => item.id === run.selected.id);
+    if (!plant) return;
+    plant.priceBand = band;
+    updatePlantPriceTag(plant);
+    save();
+    sound("place");
+    const label = PRICE_BANDS[band].label;
+    toast(`${plant.species} is tagged ${label} at ${plantAskingPrice(plant)} coins.`);
+    updateUi();
+  }
+
   function careForPlant(type) {
     if (run.busy || run.selected?.kind !== "plant") {
       toast("Choose a plant first.");
@@ -1754,9 +1884,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const firstCare = !plant.care[type];
     const wasDrooping = plant.hydration < 42;
     plant.care[type] = true;
+    let weeklyRewardCopy = "";
     if (firstCare && beneficial) {
       state.dailyCare += 1;
       state.bloom += 1;
+      addWeekStat("care", 1);
+      weeklyRewardCopy = advanceWeekGoal({ metric: "beneficialCare", value: 1 });
     }
     let recoveryReward = false;
     if (type === "water") {
@@ -1766,6 +1899,8 @@ document.addEventListener("DOMContentLoaded", () => {
         plant.recoveredToday = true;
         state.dailyRecoveries += 1;
         state.bloom += 1;
+        addWeekStat("rescues", 1);
+        weeklyRewardCopy ||= advanceWeekGoal({ metric: "thirstRescues", value: 1 });
         recoveryReward = true;
       }
       waterPour(object);
@@ -1788,7 +1923,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ? `One tiny haircut. Considerable confidence. +1 Bloom.`
         : `${plant.species} would rather keep that growth. No care bonus.`,
     };
-    toast(messages[type]);
+    toast(`${messages[type]}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
     updateUi();
   }
 
@@ -1802,6 +1937,32 @@ document.addEventListener("DOMContentLoaded", () => {
       save();
       return;
     }
+    const band = priceBandOf(plant);
+    const price = plantAskingPrice(plant);
+    if (Number.isFinite(person.budget) && price > person.budget) {
+      sound("error");
+      toast(`${person.name}'s budget is ${person.budget} coins. Retag ${plant.species} or recommend another plant.`);
+      updateUi();
+      return;
+    }
+    const careWishMet = person.careWish === "water"
+      ? plant.hydration >= 78 || plant.care.water
+      : speciesOf(plant).beneficialCare.includes(person.careWish) && plant.care[person.careWish];
+    const condition = conditionOf(plant);
+    const wishMet = plant.traits.includes(person.bonusTrait);
+    const thriving = condition.label === "thriving";
+    const idealLight = lightFit(plant).level === "ideal";
+    const extras = [wishMet, Boolean(careWishMet), thriving].filter(Boolean).length;
+    if (["drooping", "light-stressed"].includes(condition.label) && band !== "quick") {
+      sound("error");
+      toast(`${person.name} notices that ${plant.species} is ${condition.label}. Improve its condition or use a Quick tag.`);
+      return;
+    }
+    if (band === "boutique" && [wishMet, Boolean(careWishMet), thriving, idealLight].filter(Boolean).length < 2) {
+      sound("error");
+      toast(`${person.name} likes it, but Boutique needs a stronger fit or presentation. Care, rearrange, or retag it.`);
+      return;
+    }
     const remainingCustomers = state.customers.slice(state.customerIndex + 1);
     const remainingInventory = state.inventory.filter((item) => item.id !== plant.id);
     if (!inventoryCoversCustomers(remainingInventory, remainingCustomers)) {
@@ -1810,25 +1971,46 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     run.busy = true;
-    const careCount = speciesOf(plant).beneficialCare.filter((care) => plant.care[care]).length;
-    const careWishMet = person.careWish === "water"
-      ? plant.hydration >= 78 || plant.care.water
-      : speciesOf(plant).beneficialCare.includes(person.careWish) && plant.care[person.careWish];
-    const extras = [
-      plant.traits.includes(person.bonusTrait),
-      Boolean(careWishMet),
-      conditionOf(plant).label === "thriving",
-    ].filter(Boolean).length;
     const perfect = extras === 3;
-    const payout = plant.price + careCount * 2 + extras * 3 + (perfect ? 3 : 0);
+    const payout = price;
+    const satisfaction = 1 + extras + (idealLight ? 1 : 0) + (band === "quick" ? 1 : 0);
+    const delighted = satisfaction >= 4;
+    const bloomReward = 2 + extras;
+    const costOfGoods = Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
     state.coins += payout;
-    state.bloom += 2 + extras;
+    state.bloom += bloomReward;
     if (perfect) state.dailyPerfects += 1;
     const perfectDayBonus = perfect && state.dailyPerfects === 3;
     if (perfectDayBonus) state.bloom += 8;
     state.dailyRevenue += payout;
-    state.dailyCostOfGoods += Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
+    state.dailyCostOfGoods += costOfGoods;
     state.dailySales += 1;
+    addWeekStat("sales", 1);
+    addWeekStat("revenue", payout);
+    addWeekStat("costOfGoods", costOfGoods);
+    addWeekStat("profit", payout - costOfGoods);
+    addWeekStat("bloom", bloomReward + (perfectDayBonus ? 8 : 0));
+    if (perfect) addWeekStat("perfects", 1);
+    if (band === "boutique") addWeekStat("boutiqueSales", 1);
+    if (band === "quick") addWeekStat("quickSales", 1);
+    if (person.isReturning && delighted) addWeekStat("returningCustomersDelighted", 1);
+    if (!Array.isArray(state.weekStats.uniqueSpeciesSold)) state.weekStats.uniqueSpeciesSold = [];
+    const soldSpeciesId = plant.speciesId || speciesOf(plant).id;
+    if (!state.weekStats.uniqueSpeciesSold.includes(soldSpeciesId)) state.weekStats.uniqueSpeciesSold.push(soldSpeciesId);
+    rememberCustomerSale(person, plant, satisfaction);
+    let weeklyRewardCopy = "";
+    [
+      { metric: "plantsSold", value: 1 },
+      { metric: "grossProfit", value: payout - costOfGoods },
+      { metric: "perfectBriefs", value: perfect ? 1 : 0 },
+      { metric: "boutiqueSales", value: band === "boutique" ? 1 : 0 },
+      { metric: "quickSales", value: band === "quick" ? 1 : 0 },
+      { metric: "uniqueSpeciesSold", value: 1, speciesId: soldSpeciesId },
+      { metric: "returningCustomersDelighted", value: person.isReturning && delighted ? 1 : 0 },
+    ].forEach((event) => {
+      if (!event.value) return;
+      weeklyRewardCopy ||= advanceWeekGoal(event);
+    });
     state.customerIndex += 1;
     const object = plantObjects.get(plant.id);
     const target = run.customer?.position.clone().add(new THREE.Vector3(0, 1.0, 0)) || new THREE.Vector3(0, 1, 3);
@@ -1854,7 +2036,7 @@ document.addEventListener("DOMContentLoaded", () => {
     run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
     sound("sale");
-    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays ${payout} coins.${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}`);
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${payout} coins.${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -1970,6 +2152,19 @@ document.addEventListener("DOMContentLoaded", () => {
     effects.push({ kind: "mist", root, bits, age: 0, duration: 1.45, geometries: [geometry], materials: [mat] });
   }
 
+  function recordClosingProgress() {
+    if (!state.weekStats) state.weekStats = freshWeekStats(calendarForDay(state.day).week);
+    const closedDays = Array.isArray(state.weekStats.closedDays) ? state.weekStats.closedDays : [];
+    state.weekStats.closedDays = closedDays;
+    if (closedDays.includes(state.day)) return "";
+    closedDays.push(state.day);
+    const displayed = state.inventory.filter((plant) => Number.isInteger(plant.slot));
+    const healthyDisplay = displayed.length > 0 && displayed.every((plant) => lightFit(plant).level !== "poor");
+    if (!healthyDisplay) return "";
+    addWeekStat("healthyDisplayDays", 1);
+    return advanceWeekGoal({ metric: "healthyDisplayDays", value: 1 });
+  }
+
   function showReport() {
     state.phase = "report";
     run.arranging = false;
@@ -1983,7 +2178,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (ui.game) ui.game.inert = true;
     requestAnimationFrame(() => ui.nextDay?.focus());
-    if (ui.reportTitle) ui.reportTitle.textContent = `Day ${String(state.day).padStart(2, "0")} complete`;
+    const calendar = calendarForDay(state.day);
+    const closingRewardCopy = recordClosingProgress();
+    if (ui.reportTitle) ui.reportTitle.textContent = calendar.isFriday
+      ? `Week ${String(calendar.week).padStart(2, "0")} complete`
+      : `${calendar.weekday} complete`;
     if (ui.reportCopy) {
       const grossProfit = state.dailyRevenue - state.dailyCostOfGoods;
       const bloomEarned = Math.max(0, state.bloom - state.dailyBloomStart);
@@ -1994,10 +2193,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const bloomCopy = `+${bloomEarned}`;
       const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"}`;
       let highlightCopy = "The shop is ready for another morning.";
-      if (state.displayGoal?.claimed) highlightCopy = "Display challenge complete. The front shelves really worked.";
+      if (calendar.isFriday) {
+        const sales = Number(state.weekStats?.sales) || 0;
+        const profit = Number(state.weekStats?.profit) || 0;
+        const objective = state.weeklyObjective?.completed ? "Weekly goal complete." : `${weeklyObjectiveLabel(state.weeklyObjective)}.`;
+        highlightCopy = `Week ${calendar.week}: ${sales} plants rehomed · ${profit >= 0 ? "+" : ""}${profit} coins profit. ${objective}`;
+      } else if (state.displayGoal?.claimed) highlightCopy = "Display challenge complete. The front shelves really worked.";
       else if (state.dailyPerfects) highlightCopy = "A customer found exactly what they were hoping for.";
       else if (state.dailyRecoveries) highlightCopy = "A thirsty plant bounced back beautifully.";
       else if (state.dailyCare >= 6) highlightCopy = "The leaves are looking immaculate.";
+      if (closingRewardCopy) highlightCopy += closingRewardCopy;
 
       if (ui.reportProfit && ui.reportLead && ui.reportBloom && ui.reportStock && ui.reportHighlight) {
         ui.reportProfit.textContent = profitCopy;
@@ -2017,6 +2222,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function nextDay() {
     state.day += 1;
+    const calendar = calendarForDay(state.day);
+    state.week = calendar.week;
+    state.weekdayIndex = calendar.weekdayIndex;
+    if (!state.weeklyObjective || state.weeklyObjective.week !== calendar.week) {
+      state.weeklyObjective = createWeeklyObjective(calendar.week);
+      state.weekStats = freshWeekStats(calendar.week);
+    }
     state.customerIndex = 0;
     state.dailySales = 0;
     state.dailyRevenue = 0;
@@ -2061,12 +2273,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateUi(saleMessage = false) {
-    if (ui.day) ui.day.textContent = String(state.day).padStart(2, "0");
+    const calendar = calendarForDay(state.day);
+    if (ui.day) ui.day.textContent = calendar.weekday.slice(0, 3);
+    if (ui.week) ui.week.textContent = `Week ${calendar.week}`;
     if (ui.coins) ui.coins.textContent = String(state.coins);
     if (ui.bloom) ui.bloom.textContent = String(state.bloom);
     if (ui.bloom) {
       const standing = bloomStanding();
       ui.bloom.title = `${standing.name} · ${standing.copy}`;
+    }
+    if (ui.weekObjective) {
+      const label = ui.weekObjective.querySelector("strong");
+      if (label) label.textContent = weeklyObjectiveLabel(state.weeklyObjective);
+      ui.weekObjective.classList.toggle("is-complete", Boolean(state.weeklyObjective?.completed));
+      ui.weekObjective.title = state.weeklyObjective?.description || "This week's neighborhood goal";
     }
     document.body.dataset.shopPhase = state.phase;
     if (ui.soundButton) {
@@ -2082,7 +2302,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (person && !saleTransition) {
       if (ui.customerName) ui.customerName.textContent = person.name;
-      if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}” ${person.need} required · ${person.bonusTrait} + ${carePastTense(person.careWish)} + thriving bonus.`;
+      if (ui.customerMeta) {
+        const archetype = String(person.archetype || "neighbor").replaceAll("-", " ");
+        ui.customerMeta.textContent = `${archetype} · ${person.isReturning ? `visit ${person.visitNumber || 2}` : "first visit"}`;
+      }
+      if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}”`;
+      if (ui.customerMust) ui.customerMust.textContent = person.need;
+      if (ui.customerWish) ui.customerWish.textContent = person.bonusTrait || "a thriving plant";
+      if (ui.customerBudget) ui.customerBudget.textContent = `${person.budget} coins`;
       if (ui.customerAvatar) {
         ui.customerAvatar.style.backgroundImage = "";
         ui.customerAvatar.style.setProperty("--customer-color", `#${person.color.toString(16).padStart(6, "0")}`);
@@ -2115,7 +2342,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : "Care for anything thirsty, arrange the light, then open the shop when you are ready.";
     } else if (state.phase === "open") {
       title = person ? `A plant for ${person.name}` : "The last parcel is leaving";
-      copy = person ? `Find a ${person.need} plant, care for it, then make the match.` : "Wrapping the last pot for its new home.";
+      copy = person ? `Find a ${person.need} plant within ${person.name}'s ${person.budget}-coin budget.` : "Wrapping the last pot for its new home.";
     } else if (state.phase === "report") {
       title = "Shutters down";
       copy = "The day’s numbers and small victories are ready.";
@@ -2137,7 +2364,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
           : "";
         title = plant.species;
-        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} · soil ${Math.round(plant.hydration)}% · ${fit.label} · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -2152,7 +2379,7 @@ document.addEventListener("DOMContentLoaded", () => {
           action = "Move this plant";
           disabled = false;
         } else if (person) {
-          action = `Offer to ${person.name}`;
+          action = `Offer for ${plantAskingPrice(plant)} coins`;
           disabled = false;
         }
       }
@@ -2176,6 +2403,16 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.action.disabled = disabled || run.busy;
     }
     const plant = selected?.kind === "plant" ? state.inventory.find((item) => item.id === selected.id) : null;
+    if (ui.priceTray) {
+      const showPrice = Boolean(plant && state.phase !== "supply" && state.phase !== "report");
+      ui.priceTray.hidden = !showPrice;
+      if (ui.priceAmount && plant) ui.priceAmount.textContent = `${plantAskingPrice(plant)} coins`;
+      ui.priceButtons.forEach((button) => {
+        const pressed = Boolean(plant && button.dataset.priceBand === priceBandOf(plant));
+        button.setAttribute("aria-pressed", String(pressed));
+        button.disabled = !plant || run.busy;
+      });
+    }
     if (ui.careTray) {
       const showCare = Boolean(plant && state.phase !== "supply" && state.phase !== "report");
       ui.careTray.hidden = !showCare;
@@ -2374,6 +2611,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (event.key === "1") careForPlant("water");
     if (event.key === "2") careForPlant("mist");
     if (event.key === "3") careForPlant("prune");
+    if (event.key === "4") setPriceBand("quick");
+    if (event.key === "5") setPriceBand("fair");
+    if (event.key === "6") setPriceBand("boutique");
     if (event.key.toLowerCase() === "q") {
       event.preventDefault();
       cycleKeyboardSelection(event.shiftKey ? -1 : 1);

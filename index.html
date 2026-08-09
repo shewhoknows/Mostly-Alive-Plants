@@ -65,9 +65,9 @@
           <span class="brand-sprout" aria-hidden="true">⌁</span>
           <span>MAP</span>
         </div>
-        <div class="stat-chip">
-          <span class="stat-label">Day</span>
-          <strong id="topbar-day">01</strong>
+        <div class="stat-chip week-chip">
+          <span id="topbar-week" class="stat-label">Week 1</span>
+          <strong id="topbar-day">Mon</strong>
         </div>
         <div class="stat-chip">
           <span class="stat-label">Coins</span>
@@ -83,6 +83,7 @@
         <p class="panel-kicker">Today in the shop</p>
         <h2 id="task-title">Open the delivery</h2>
         <p id="task-copy">Open the paper-wrapped carton to meet today’s plants.</p>
+        <p id="week-objective" class="week-objective"><span>Week goal</span><strong>0/3 lovely matches</strong></p>
         <button id="open-shop-button" class="button button-primary task-button" type="button" hidden>
           <span>Open the shop</span>
           <span aria-hidden="true">↗</span>
@@ -91,9 +92,17 @@
 
       <aside id="customer-card" class="customer-card" hidden aria-live="polite">
         <div class="customer-avatar" aria-hidden="true"><span>☺</span></div>
-        <div>
-          <p id="customer-name" class="panel-kicker">A customer</p>
+        <div class="customer-copy">
+          <div class="customer-heading">
+            <p id="customer-name" class="panel-kicker">A customer</p>
+            <p id="customer-meta" class="customer-meta">Beginner · first visit</p>
+          </div>
           <p id="customer-request">“I’m looking for something leafy.”</p>
+          <dl class="customer-chips" aria-label="Customer brief">
+            <div><dt>Must have</dt><dd id="customer-must">lush</dd></div>
+            <div><dt>Would love</dt><dd id="customer-wish">easygoing</dd></div>
+            <div><dt>Budget</dt><dd id="customer-budget">24 coins</dd></div>
+          </dl>
         </div>
       </aside>
 
@@ -109,6 +118,15 @@
           <button id="care-prune" class="tool-button" type="button">
             <span aria-hidden="true">⌁</span><span>Prune</span>
           </button>
+        </div>
+      </div>
+
+      <div id="price-tray" class="price-tray" hidden aria-label="Plant price tag">
+        <p><span>Price tag</span><strong id="price-amount">20 coins</strong></p>
+        <div role="group" aria-label="Choose a price band">
+          <button class="price-button" type="button" data-price-band="quick"><span>Quick</span><small>−10%</small></button>
+          <button class="price-button" type="button" data-price-band="fair"><span>Fair</span><small>usual</small></button>
+          <button class="price-button" type="button" data-price-band="boutique"><span>Boutique</span><small>+20%</small></button>
         </div>
       </div>
 
@@ -187,9 +205,9 @@
           <div><strong>1</strong><p>Read the morning forecast and choose a nursery lot you can afford.</p></div>
           <div><strong>2</strong><p>Open its cartons, then water, mist, or prune plants that need attention.</p></div>
           <div><strong>3</strong><p>Arrange the prepared plants on your displays, then open the shop when you are ready.</p></div>
-          <div><strong>4</strong><p>Meet each customer’s need; optional wishes turn good matches into perfect ones.</p></div>
+          <div><strong>4</strong><p>Read Must have, Would love, and Budget; retag a plant when the price is not right.</p></div>
         </div>
-        <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, and arrow keys turn the view.</p>
+        <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
       </div>
     </section>

@@ -1,4 +1,4 @@
-import { INVENTORY_CAPACITY, SPECIES, SUPPLIER_TYPES } from "./game-data.js";
+import { INVENTORY_CAPACITY, PRICE_BANDS, SPECIES, SUPPLIER_TYPES } from "./game-data.js";
 import { askingPrice, availableSpeciesForWeek, calendarForDay } from "./progression-system.js";
 
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
@@ -27,28 +27,30 @@ function plantSpecies(plant) {
     || null;
 }
 
-function quickPrice(plant) {
-  return askingPrice({ ...plant, priceBand: "quick" }, plantSpecies(plant));
+function minimumAskingPrice(plant, priceBand = "quick") {
+  return askingPrice({ ...plant, priceBand }, plantSpecies(plant));
 }
 
 function customerRequirement(customer) {
   const budget = Number(customer?.budget);
+  const requestedBand = customer?.objectivePriceBand;
   return {
     need: customerNeed(customer),
     budget: customer?.budget !== undefined && customer?.budget !== null && Number.isFinite(budget)
       ? budget
       : null,
+    priceBand: PRICE_BANDS[requestedBand] ? requestedBand : "quick",
   };
 }
 
 function canAssignNeeds(plants, requirements, customerIndex = 0, used = new Set()) {
   if (customerIndex >= requirements.length) return true;
-  const { need, budget } = requirements[customerIndex];
+  const { need, budget, priceBand } = requirements[customerIndex];
 
   for (let plantIndex = 0; plantIndex < plants.length; plantIndex += 1) {
     const plant = plants[plantIndex];
     if (used.has(plantIndex) || !plantTraits(plant).includes(need)) continue;
-    if (budget !== null && quickPrice(plant) > budget) continue;
+    if (budget !== null && minimumAskingPrice(plant, priceBand) > budget) continue;
     used.add(plantIndex);
     if (canAssignNeeds(plants, requirements, customerIndex + 1, used)) return true;
     used.delete(plantIndex);
@@ -59,8 +61,9 @@ function canAssignNeeds(plants, requirements, customerIndex = 0, used = new Set(
 
 /**
  * Returns true only when distinct inventory plants can be assigned to every
- * customer's required trait and budget. A single plant can never cover two
- * sales. Legacy customers without a budget retain their trait-only behavior.
+ * customer's required trait and budget at its minimum required price band. A
+ * single plant can never cover two sales. Ordinary briefs use Quick; objective
+ * briefs can request Boutique. Legacy customers remain trait-only.
  */
 export function inventoryCoversCustomers(inventory = [], customers = []) {
   const requirements = customers.map(customerRequirement);
@@ -138,7 +141,8 @@ function chooseSpecies(type, day, customers, inventory, quantity = type.quantity
   const speciesPool = availableSpeciesForWeek(week);
   const needs = customers.map(customerNeed).filter(Boolean);
   const budgets = customers.map((customer) => Number.isFinite(Number(customer?.budget)) ? Number(customer.budget) : "legacy");
-  const seedKey = [day, type.id, quantity, needs.join(","), budgets.join(","), inventorySignature(inventory)].join("|");
+  const priceBands = customers.map((customer) => PRICE_BANDS[customer?.objectivePriceBand] ? customer.objectivePriceBand : "quick");
+  const seedKey = [day, type.id, quantity, needs.join(","), budgets.join(","), priceBands.join(","), inventorySignature(inventory)].join("|");
   const requestedNoDuplicates = Boolean(type.selection.avoidDuplicates);
 
   let candidates = combinations(speciesPool, quantity, !requestedNoDuplicates)

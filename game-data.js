@@ -393,7 +393,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Healthy Margins",
     description: "Finish the week with {target} coins of gross profit.",
     metric: "grossProfit",
-    target: { base: 90, perWeek: 12 },
+    target: { base: 90, perWeek: 12, maximum: 260 },
     reward: { coins: 18, bloom: 6 },
   },
   {
@@ -401,7 +401,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "New Windowsills",
     description: "Find homes for {target} plants this week.",
     metric: "plantsSold",
-    target: { base: 11, perWeek: 1 },
+    target: { base: 11, perWeek: 1, maximum: 15 },
     reward: { coins: 16, bloom: 7 },
   },
   {
@@ -409,7 +409,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Perfect Listener",
     description: "Complete {target} perfect customer briefs.",
     metric: "perfectBriefs",
-    target: { base: 4, perWeek: 1 },
+    target: { base: 4, perWeek: 1, maximum: 9 },
     reward: { coins: 12, bloom: 9 },
   },
   {
@@ -417,7 +417,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Right Plant, Right Light",
     description: "End {target} days with every displayed plant in tolerated or ideal light.",
     metric: "healthyDisplayDays",
-    target: { base: 3, perWeek: 0 },
+    target: { base: 3, perWeek: 0, maximum: 5 },
     reward: { coins: 10, bloom: 8 },
   },
   {
@@ -425,7 +425,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Tender Recovery",
     description: "Rescue {target} drooping plants with a good drink.",
     metric: "thirstRescues",
-    target: { base: 3, perWeek: 0 },
+    target: { base: 3, perWeek: 0, maximum: 8 },
     reward: { coins: 10, bloom: 7 },
   },
   {
@@ -433,7 +433,10 @@ export const WEEKLY_OBJECTIVES = [
     title: "Boutique Week",
     description: "Sell {target} plants at Boutique price to delighted customers.",
     metric: "boutiqueSales",
-    target: { base: 3, perWeek: 1 },
+    // One honest Boutique-budget brief is guaranteed on each trading day. A
+    // higher invariant would fail for a full migrated shop of the priciest
+    // species: only one unlocked neighbor can afford that worst-case price.
+    target: { base: 5, perWeek: 0, maximum: 5 },
     reward: { coins: 20, bloom: 5 },
   },
   {
@@ -441,7 +444,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Fresh Stock, Fast",
     description: "Rehome {target} Quick-priced plants.",
     metric: "quickSales",
-    target: { base: 6, perWeek: 1 },
+    target: { base: 6, perWeek: 1, maximum: 12 },
     reward: { coins: 12, bloom: 6 },
   },
   {
@@ -457,7 +460,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Thoughtful Care",
     description: "Give plants {target} beneficial care moments.",
     metric: "beneficialCare",
-    target: { base: 16, perWeek: 2 },
+    target: { base: 16, perWeek: 2, maximum: 40 },
     reward: { coins: 12, bloom: 8 },
   },
   {
@@ -465,7 +468,7 @@ export const WEEKLY_OBJECTIVES = [
     title: "Familiar Faces",
     description: "Delight {target} returning customers.",
     metric: "returningCustomersDelighted",
-    target: { base: 3, perWeek: 1 },
+    target: { base: 3, perWeek: 1, maximum: 9 },
     reward: { coins: 15, bloom: 10 },
   },
 ];
