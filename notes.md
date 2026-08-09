@@ -16,3 +16,16 @@
 - Downscaled each selected texture to 512×512 PNG for practical mobile download and GPU memory use. Final project paths are `assets/textures/terracotta-floor.png`, `assets/textures/botanical-plaster.png`, and `assets/textures/painted-oak.png`.
 - Prompt constraints shared by all three: flat material view, uniform detail, seamless edges, neutral diffuse light, no text, logos, watermark, perspective, or strong focal marks.
 - Next: build the Three.js cutaway shop and use these textures on the room and furniture.
+
+## 2026-08-09 — Playable 3D vertical slice
+
+- Rebuilt the title screen around a live, softly visible isometric shop scene and enabled **Open for the day** once local assets finish loading.
+- Added a complete build-free Three.js game in `game.js`: textured cutaway room, warm lighting and shadows, low-poly furniture, seven plant species, animated foliage, customers, particles, and a procedural sound palette.
+- Added the full day loop: unpack three deliveries, care for plants with water/mist/prune, place them on eight snap displays, read three customer requests, make forgiving trait matches, earn coins and Community Bloom, see a closing report, and open the next day.
+- Added a first-sale moon-moth surprise, a visible secondhand grow-lamp upgrade, daily procedural requests, and `localStorage` persistence.
+- Added mouse, keyboard, and touch input: raycast tap selection, contextual action button, drag-to-pan, wheel/pinch zoom, view rotation, Q/E keyboard navigation, and 1/2/3 care shortcuts.
+- Vendored pinned Three.js `0.179.1` modules and its MIT license so the 3D engine does not depend on a runtime CDN. Texture load failures still degrade to solid-color materials.
+- Reworked the HUD at desktop, 568×320, 480×320, 390×844, and 320×480 sizes. Fixed portrait overlay blocking, short-screen panel collisions, clipped controls, and compact title overlap.
+- Improved accessibility with labelled dialogs, modal focus management, inert background controls, reduced-motion support, keyboard selection, live status copy, and visible care completion states.
+- Validation: `node --check game.js`, `git diff --check`, local HTTP asset checks, real browser title/start/gameplay screenshots, keyboard/modal checks, and an end-to-end three-sale day run. No browser console errors or warnings in the tested build.
+- Next: add installable mobile metadata, a concise README, then run final static-hosting and performance checks.
