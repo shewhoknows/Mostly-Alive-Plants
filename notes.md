@@ -113,3 +113,9 @@
 - Began the agreed content-and-progression milestone by expanding the recurring 3D cast from six neighbors to twelve.
 - Added Avery, Talia, Ivo, Mae, Omar, and Rue with six new hair or headwear silhouettes, six geometry-specific outfits, varied proportions and skin tones, and small personal details such as freckles, glasses, earrings, pockets, and drawstrings. These are modeled additions rather than palette swaps.
 - Preserved the existing friendly face language and the full shoulder, elbow, hip, knee, walk, carry, contact-shadow, and raycast contracts. All twelve characters instantiate and animate successfully at 2.59–2.71 shop units tall.
+
+## 2026-08-09 — Neighborhood Week v1, plant model expansion
+
+- Expanded the procedural 3D plant library with nine genuinely different silhouettes: String of Pearls, Coinleaf Pilea, Rubber Plant, Spoonflower Lily, Parlor Palm, Zanzibar Gem, Elephant Ear, Polka Dot Begonia, and Tiny Ficus.
+- Modeled the new forms as hanging bead strands, round peltate leaves, a woody glossy tree, white spathes, feather palms, paired ZZ leaflets, shield leaves, spotted cane growth, and a pruned miniature canopy rather than recoloring the original seven plants.
+- Connected every new foliage system to the existing hydration-droop pivots and reused the original botanical texture maps. Programmatic construction checks found nonzero animated foliage on all nine models, exact ground-level pot bases, and pre-slot heights from 0.77 to 2.35 shop units.
