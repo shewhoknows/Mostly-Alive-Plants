@@ -1,44 +1,21 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { createCharacter3D, animateCharacter3D } from "./character-models.js";
 import { createDistinctPlant3D } from "./plant-models.js";
+import {
+  CARES,
+  CUSTOMERS,
+  INVENTORY_CAPACITY,
+  SAVE_VERSION,
+  SLOT_DATA,
+  SPECIES,
+} from "./game-data.js";
+import { generateSupplierLots, inventoryCoversCustomers } from "./supplier-system.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
 const lerp = THREE.MathUtils.lerp;
 const STORAGE_KEY = "mostly-alive-plants-save-v2";
-const SAVE_VERSION = 3;
-const CARES = ["water", "mist", "prune"];
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-const SPECIES = [
-  { name: "Button Fern", traits: ["lush", "shade-loving"], price: 18, shape: "fern", color: 0x5e945a, dryRate: 0.24 },
-  { name: "Velvet Pothos", traits: ["trailing", "easygoing"], price: 20, shape: "vine", color: 0x567a45, dryRate: 0.14 },
-  { name: "Pinstripe Calathea", traits: ["dramatic", "patterned"], price: 24, shape: "fan", color: 0x386549, dryRate: 0.22 },
-  { name: "Pocket Succulent", traits: ["sunny", "sturdy"], price: 16, shape: "succulent", color: 0x83a984, dryRate: 0.06 },
-  { name: "Little Monstera", traits: ["bold", "lush"], price: 26, shape: "broad", color: 0x3d8050, dryRate: 0.17 },
-  { name: "Snake Plant", traits: ["upright", "easygoing"], price: 22, shape: "spear", color: 0x718b3c, dryRate: 0.07 },
-  { name: "Moon Cactus", traits: ["strange", "sunny"], price: 28, shape: "cactus", color: 0x4f8c67, dryRate: 0.045 },
-];
-
-const CUSTOMERS = [
-  { name: "Mina", color: 0xe39a7b, line: "My windowsill needs a little courage." },
-  { name: "Basil", color: 0x7189a6, line: "I promised myself I could keep one alive." },
-  { name: "Jo", color: 0xd3a64b, line: "My bookshelf is looking emotionally vacant." },
-  { name: "Nori", color: 0x8f74a8, line: "I want a roommate who enjoys silence." },
-  { name: "Pip", color: 0x6d9a78, line: "Something peculiar, but polite, please." },
-  { name: "Sol", color: 0xc9785e, line: "The sunniest corner of my flat is lonely." },
-];
-
-const SLOT_DATA = [
-  { x: -4.65, y: 1.12, z: -4.32, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
-  { x: -2.85, y: 1.12, z: -4.32, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
-  { x: -4.65, y: 2.55, z: -4.32, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
-  { x: -2.85, y: 2.55, z: -4.32, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
-  { x: 1.2, y: 0.06, z: -3.85, size: 0.9, zone: "window", zoneLabel: "sunny window" },
-  { x: -1.3, y: 0.06, z: -2.85, size: 0.9, zone: "floor", zoneLabel: "open floor" },
-  { x: -3.7, y: 0.06, z: 0.2, size: 0.9, zone: "floor", zoneLabel: "open floor" },
-  { x: 2.35, y: 1.4, z: 1.25, size: 0.72, zone: "counter", zoneLabel: "front counter" },
-];
 
 function seeded(seed) {
   let value = seed >>> 0;
@@ -48,17 +25,33 @@ function seeded(seed) {
   };
 }
 
-function plantRecord(speciesName, seed = Math.random() * 99999) {
+function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
   const species = SPECIES.find((item) => item.name === speciesName) || SPECIES[0];
   const rng = seeded(Math.floor(seed));
+  const colorShift = rng() * 0.12 - 0.06;
   return {
     id: `plant-${Date.now().toString(36)}-${Math.floor(rng() * 1e7).toString(36)}`,
+    speciesId: species.id,
     species: species.name,
     traits: [...species.traits],
     price: species.price + Math.floor(rng() * 4),
-    colorShift: rng() * 0.12 - 0.06,
+    wholesaleCost: species.wholesaleCost,
+    acquisitionCost: Number.isFinite(options.acquisitionCost) ? options.acquisitionCost : species.wholesaleCost,
+    colorShift,
     care: { water: false, mist: false, prune: false },
-    hydration: Math.round(64 + rng() * 27),
+    hydration: Number.isFinite(options.hydration)
+      ? clamp(options.hydration, 8, 100)
+      : Math.round(64 + rng() * 27),
+    supplierLot: options.supplierLot || null,
+    priceBand: "fair",
+    lifeStage: "mature",
+    rootComfort: "comfortable",
+    pot: "nursery-terracotta",
+    soil: "standard",
+    parentId: null,
+    benchStatus: null,
+    held: false,
+    cosmeticVariation: { hueShift: colorShift },
     recoveredToday: false,
     thirstWarned: false,
     slot: null,
@@ -73,16 +66,24 @@ function freshState() {
   return {
     version: SAVE_VERSION,
     day: 1,
-    coins: 28,
+    coins: 42,
     bloom: 8,
     sound: true,
+    inventoryCapacity: INVENTORY_CAPACITY,
     inventory: [fern, pothos],
     customers: [],
     crateQueue: [],
-    crates: 3,
+    crates: 0,
+    phase: "supply",
+    supplierOptions: [],
+    selectedLotId: null,
     customerIndex: 0,
     dailySales: 0,
     dailyRevenue: 0,
+    dailyStockCost: 0,
+    dailyCostOfGoods: 0,
+    dailyStartingCoins: 42,
+    dailyBloomStart: 8,
     dailyCare: 0,
     dailyPerfects: 0,
     dailyRecoveries: 0,
@@ -97,6 +98,7 @@ function loadState() {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!value || !Array.isArray(value.inventory)) return freshState();
     const base = freshState();
+    const oldVersion = Number(value.version) || 1;
     const customers = Array.isArray(value.customers) ? value.customers.map((customer, index) => {
       const species = SPECIES.find((item) => item.name === customer.speciesHint) || SPECIES[index % SPECIES.length];
       const need = customer.need || species.traits[0];
@@ -104,27 +106,109 @@ function loadState() {
         ...customer,
         need,
         bonusTrait: customer.bonusTrait || species.traits.find((trait) => trait !== need) || species.traits[0],
-        careWish: customer.careWish || CARES[index % CARES.length],
+        careWish: species.beneficialCare.includes(customer.careWish)
+          ? customer.careWish
+          : species.beneficialCare[index % species.beneficialCare.length],
       };
     }) : [];
-    return {
-      ...base,
-      ...value,
-      version: SAVE_VERSION,
-      upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
-      customers,
-      crateQueue: Array.isArray(value.crateQueue) ? value.crateQueue : [],
-      inventory: value.inventory.map((plant) => ({
+    const migratedPhase = oldVersion >= 4 && ["supply", "preparation", "open", "report"].includes(value.phase)
+      ? value.phase
+      : Number(value.crates) > 0
+        ? "preparation"
+        : Number(value.customerIndex) >= 3
+          ? "report"
+          : "open";
+    const occupiedSlots = new Set();
+    const inventory = value.inventory.map((plant) => {
+      const species = speciesForRecord(plant);
+      const validSlot = Number.isInteger(plant.slot)
+        && SLOT_DATA[plant.slot]
+        && !occupiedSlots.has(plant.slot);
+      if (validSlot) occupiedSlots.add(plant.slot);
+      const colorShift = Number.isFinite(plant.colorShift) ? plant.colorShift : 0;
+      return {
+        priceBand: "fair",
+        lifeStage: "mature",
+        rootComfort: "comfortable",
+        pot: "nursery-terracotta",
+        soil: "standard",
+        parentId: null,
+        benchStatus: null,
+        held: false,
         ...plant,
+        species: species.name,
+        speciesId: species.id,
+        traits: Array.isArray(plant.traits) ? plant.traits : [...species.traits],
+        wholesaleCost: Number.isFinite(plant.wholesaleCost) ? plant.wholesaleCost : species.wholesaleCost,
+        acquisitionCost: Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : species.wholesaleCost,
+        colorShift,
+        cosmeticVariation: { hueShift: colorShift, ...(plant.cosmeticVariation || {}) },
+        slot: validSlot ? plant.slot : null,
         hydration: clamp(Number.isFinite(plant.hydration) ? plant.hydration : 78, 8, 100),
         recoveredToday: Boolean(plant.recoveredToday),
         thirstWarned: Boolean(plant.thirstWarned),
         care: { water: false, mist: false, prune: false, ...(plant.care || {}) },
-      })),
+      };
+    });
+    const crateQueue = Array.isArray(value.crateQueue)
+      ? value.crateQueue.map((entry, index) => typeof entry === "string" ? {
+        id: `legacy-day-${value.day || 1}-delivery-${index}`,
+        speciesId: speciesOfName(entry).id,
+        speciesName: speciesOfName(entry).name,
+        seed: (value.day || 1) * 100 + index * 17,
+        condition: "healthy",
+        acquisitionCost: 0,
+        status: "boxed",
+      } : entry)
+      : [];
+    return {
+      ...base,
+      ...value,
+      version: SAVE_VERSION,
+      phase: migratedPhase,
+      supplierOptions: Array.isArray(value.supplierOptions) ? value.supplierOptions : [],
+      selectedLotId: value.selectedLotId || null,
+      inventoryCapacity: Number.isFinite(value.inventoryCapacity) ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity) : INVENTORY_CAPACITY,
+      dailyStockCost: Number.isFinite(value.dailyStockCost) ? value.dailyStockCost : 0,
+      dailyCostOfGoods: Number.isFinite(value.dailyCostOfGoods) ? value.dailyCostOfGoods : 0,
+      dailyStartingCoins: Number.isFinite(value.dailyStartingCoins) ? value.dailyStartingCoins : Number.isFinite(value.coins) ? value.coins : base.coins,
+      dailyBloomStart: Number.isFinite(value.dailyBloomStart) ? value.dailyBloomStart : Number.isFinite(value.bloom) ? value.bloom : base.bloom,
+      upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
+      customers,
+      crateQueue,
+      crates: crateQueue.length,
+      inventory,
     };
   } catch {
     return freshState();
   }
+}
+
+function speciesOfName(name) {
+  return SPECIES.find((item) => item.name === name) || SPECIES[0];
+}
+
+function speciesForRecord(plant) {
+  return SPECIES.find((item) => item.id === plant?.speciesId)
+    || speciesOfName(plant?.species);
+}
+
+function deliverySpeciesName(entry) {
+  if (typeof entry === "string") return entry;
+  return entry?.speciesName || SPECIES.find((species) => species.id === entry?.speciesId)?.name || SPECIES[0].name;
+}
+
+function allocateLotCosts(speciesNames, totalCost) {
+  if (!speciesNames.length) return [];
+  const weights = speciesNames.map((name) => speciesOfName(name).wholesaleCost);
+  const totalWeight = weights.reduce((sum, value) => sum + value, 0) || speciesNames.length;
+  const costs = weights.map((weight) => Math.floor((totalCost * weight) / totalWeight));
+  let remainder = totalCost - costs.reduce((sum, value) => sum + value, 0);
+  for (let index = 0; remainder > 0; index = (index + 1) % costs.length) {
+    costs[index] += 1;
+    remainder -= 1;
+  }
+  return costs;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -142,6 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
     taskCard: document.querySelector(".task-card"),
     taskTitle: $("task-title"),
     taskCopy: $("task-copy"),
+    openShop: $("open-shop-button"),
     action: $("action-button"),
     careTray: $("care-tray"),
     care: { water: $("care-water"), mist: $("care-mist"), prune: $("care-prune") },
@@ -158,6 +243,12 @@ document.addEventListener("DOMContentLoaded", () => {
     upgradeOptions: $("upgrade-options"),
     closeUpgrades: $("close-upgrades"),
     upgradeButton: $("upgrade-button"),
+    arrangeButton: $("arrange-button"),
+    supplierBoard: $("supplier-board"),
+    supplierTitle: $("supplier-title"),
+    supplierForecast: $("supplier-forecast"),
+    supplierStatus: $("supplier-status"),
+    supplierOptions: $("supplier-options"),
     soundButton: $("sound-button"),
     helpButton: $("help-button"),
     helpModal: $("help-modal"),
@@ -195,6 +286,8 @@ document.addEventListener("DOMContentLoaded", () => {
     busy: false,
     selected: null,
     carried: null,
+    arranging: false,
+    moveOrigin: null,
     crate: null,
     crateAnimation: null,
     customer: null,
@@ -240,9 +333,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function makeDisplayGoal(rng) {
-    const occupied = new Set(state.inventory.map((plant) => plant.slot).filter(Number.isInteger));
-    const freeZones = new Set(SLOT_DATA.filter((slot, index) => !occupied.has(index)).map((slot) => slot.zone));
-    const deliveries = state.crateQueue.map((name) => SPECIES.find((species) => species.name === name)).filter(Boolean);
+    const deliveries = state.crateQueue.map((entry) => speciesOfName(deliverySpeciesName(entry))).filter(Boolean);
+    const stock = state.inventory.map(speciesOf);
+    const availableSpecies = [...stock, ...deliveries];
     const moments = [
       { trait: "trailing", zone: "upperShelf", copy: "Let something trailing cascade from the upper shelf." },
       { trait: "sunny", zone: "window", copy: "Make a sunny-window moment." },
@@ -250,14 +343,26 @@ document.addEventListener("DOMContentLoaded", () => {
       { trait: "lush", zone: "lowerShelf", copy: "Build a lush little shelf vignette." },
       { trait: "strange", zone: "counter", copy: "Feature something strange at the front counter." },
     ];
-    const possible = moments.filter((moment) => freeZones.has(moment.zone) && deliveries.some((species) => species.traits.includes(moment.trait)));
+    const possible = moments.filter((moment) => {
+      if (!availableSpecies.some((species) => species.traits.includes(moment.trait))) return false;
+      if (deliveries.some((species) => species.traits.includes(moment.trait))) return true;
+      return state.inventory.some((plant) => plant.traits.includes(moment.trait)
+        && SLOT_DATA[plant.slot]?.zone !== moment.zone);
+    });
     let choice = possible[Math.floor(rng() * possible.length)];
     if (!choice) {
-      const slot = SLOT_DATA.find((item, index) => !occupied.has(index));
-      const species = deliveries[0];
-      if (!slot || !species) return null;
-      const trait = species.traits[Math.floor(rng() * species.traits.length)];
-      choice = { trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` };
+      const fallback = [];
+      state.inventory.forEach((plant) => SLOT_DATA.forEach((slot) => {
+        if (SLOT_DATA[plant.slot]?.zone === slot.zone) return;
+        const trait = plant.traits[Math.floor(rng() * plant.traits.length)];
+        fallback.push({ trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` });
+      }));
+      deliveries.forEach((species) => SLOT_DATA.forEach((slot) => {
+        const trait = species.traits[Math.floor(rng() * species.traits.length)];
+        fallback.push({ trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` });
+      }));
+      choice = fallback[Math.floor(rng() * fallback.length)];
+      if (!choice) return null;
     }
     return {
       id: `day-${state.day}-${choice.zone}-${choice.trait}`,
@@ -270,6 +375,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setupDay(force = false) {
     if (!force && state.customers?.length === 3 && Array.isArray(state.crateQueue)) {
+      if (state.phase === "supply" && !state.supplierOptions?.length) {
+        state.supplierOptions = generateSupplierLots({
+          day: state.day,
+          customers: state.customers,
+          inventory: state.inventory,
+          coins: state.coins,
+          capacity: state.inventoryCapacity,
+        });
+      }
       if (!state.displayGoal && state.crateQueue.length) state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
       return;
     }
@@ -286,12 +400,50 @@ document.addEventListener("DOMContentLoaded", () => {
       const person = CUSTOMERS[personIndex];
       const need = species.traits[Math.floor(rng() * species.traits.length)];
       const bonusTrait = species.traits.find((trait) => trait !== need) || species.traits[0];
-      const careWish = CARES[Math.floor(rng() * CARES.length)];
+      const careWish = species.beneficialCare[Math.floor(rng() * species.beneficialCare.length)];
       state.customers.push({ ...person, need, bonusTrait, careWish, speciesHint: species.name });
-      state.crateQueue.push(species.name);
     }
-    state.crates = 3;
-    state.displayGoal = makeDisplayGoal(rng);
+    if (state.inventory.length) {
+      const stockPlant = state.inventory[Math.floor(rng() * state.inventory.length)];
+      const stockSpecies = speciesOfName(stockPlant.species);
+      const need = stockSpecies.traits[Math.floor(rng() * stockSpecies.traits.length)];
+      state.customers[0] = {
+        ...state.customers[0],
+        need,
+        bonusTrait: stockSpecies.traits.find((trait) => trait !== need) || need,
+        careWish: stockSpecies.beneficialCare[Math.floor(rng() * stockSpecies.beneficialCare.length)],
+        speciesHint: stockSpecies.name,
+      };
+    }
+    if (state.inventoryCapacity - state.inventory.length < 3 && state.inventory.length >= 3) {
+      const offset = Math.floor(rng() * state.inventory.length);
+      state.customers = state.customers.map((customer, index) => {
+        const stockPlant = state.inventory[(offset + index) % state.inventory.length];
+        const stockSpecies = speciesOfName(stockPlant.species);
+        const need = stockSpecies.traits[Math.floor(rng() * stockSpecies.traits.length)];
+        return {
+          ...customer,
+          need,
+          bonusTrait: stockSpecies.traits.find((trait) => trait !== need) || need,
+          careWish: stockSpecies.beneficialCare[Math.floor(rng() * stockSpecies.beneficialCare.length)],
+          speciesHint: stockSpecies.name,
+        };
+      });
+    }
+    state.phase = "supply";
+    state.crates = 0;
+    state.selectedLotId = null;
+    state.dailyStockCost = 0;
+    state.dailyStartingCoins = state.coins;
+    state.dailyBloomStart = state.bloom;
+    state.displayGoal = null;
+    state.supplierOptions = generateSupplierLots({
+      day: state.day,
+      customers: state.customers,
+      inventory: state.inventory,
+      coins: state.coins,
+      capacity: state.inventoryCapacity,
+    });
     save();
   }
 
@@ -616,8 +768,22 @@ document.addEventListener("DOMContentLoaded", () => {
     return SPECIES.find((item) => item.name === plant.species) || SPECIES[0];
   }
 
+  function lightFit(plant, slotIndex = plant?.slot) {
+    const spec = speciesOf(plant);
+    const preferred = spec.preferredLight;
+    const actual = SLOT_DATA[slotIndex]?.lightLevel;
+    if (!actual) return { level: "unplaced", label: "light undecided", color: 0xffd15d };
+    if (preferred === actual) return { level: "ideal", label: `ideal ${actual} light`, color: 0x75a86e };
+    if (spec.toleratedLight?.includes(actual)) return { level: "tolerable", label: `${actual} light · tolerable`, color: 0xe2bd5d };
+    return { level: "poor", label: `${actual} light · poor fit`, color: 0xdf846b };
+  }
+
   function conditionOf(plant) {
-    if (plant.hydration >= 68) return { label: "thriving", icon: "●" };
+    const fit = lightFit(plant);
+    if (plant.recoveredToday && fit.level !== "poor") return { label: "recovering", icon: "◕" };
+    if (plant.hydration >= 68 && fit.level === "ideal") return { label: "thriving", icon: "●" };
+    if (plant.hydration >= 68 && fit.level === "poor") return { label: "light-stressed", icon: "◐" };
+    if (plant.hydration >= 68) return { label: "comfortable", icon: "◐" };
     if (plant.hydration >= 42) return { label: "comfortable", icon: "◐" };
     return { label: "drooping", icon: "○" };
   }
@@ -691,16 +857,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateSlotGlow() {
-    const occupied = new Set(state.inventory.map((plant) => plant.slot).filter(Number.isInteger));
+    const occupants = new Map(state.inventory
+      .filter((plant) => plant.id !== run.carried && Number.isInteger(plant.slot))
+      .map((plant) => [plant.slot, plant]));
     const carriedPlant = state.inventory.find((plant) => plant.id === run.carried);
     slotObjects.forEach((slot, index) => {
-      const available = !occupied.has(index);
-      const goalMatch = available && carriedPlant && !state.displayGoal?.claimed
+      const available = !occupants.has(index);
+      const swapTarget = Boolean(carriedPlant && occupants.has(index) && (run.arranging || state.phase === "preparation"));
+      const fit = carriedPlant ? lightFit(carriedPlant, index) : null;
+      const goalMatch = (available || swapTarget) && carriedPlant && !state.displayGoal?.claimed
         && carriedPlant.traits.includes(state.displayGoal?.trait)
         && SLOT_DATA[index].zone === state.displayGoal?.zone;
-      slot.visible = available;
-      slot.material.opacity = run.carried && available ? (goalMatch ? 0.96 : 0.72) : 0.12;
-      slot.material.color.set(goalMatch ? 0xff8e6e : run.carried ? 0xffd15d : 0xd7be75);
+      slot.visible = available || swapTarget;
+      slot.material.opacity = run.carried && (available || swapTarget) ? (goalMatch ? 0.98 : 0.78) : 0.12;
+      slot.material.color.set(fit ? fit.color : 0xd7be75);
+      slot.scale.setScalar(goalMatch ? 1.22 : 1);
+      slot.userData.occupantId = occupants.get(index)?.id || null;
     });
   }
 
@@ -711,6 +883,22 @@ document.addEventListener("DOMContentLoaded", () => {
     return goal.claimed
       ? "Display vignette complete ✓"
       : `Display: ${goal.trait} → ${zone} · +${goal.rewardCoins} coins · +${goal.rewardBloom} Bloom`;
+  }
+
+  function bloomStanding() {
+    const stages = [
+      { threshold: 0, name: "New Shoots" },
+      { threshold: 25, name: "Neighborhood Favorite" },
+      { threshold: 60, name: "Trusted Plantkeeper" },
+      { threshold: 120, name: "Shop in Full Bloom" },
+    ];
+    const currentIndex = stages.findLastIndex((stage) => state.bloom >= stage.threshold);
+    const current = stages[Math.max(0, currentIndex)];
+    const next = stages[currentIndex + 1];
+    return {
+      name: current.name,
+      copy: next ? `${next.threshold - state.bloom} Bloom to ${next.name}` : "The whole neighborhood knows your windows",
+    };
   }
 
   function evaluateDisplayGoal(plant, slot) {
@@ -725,6 +913,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function bindUi() {
     ui.start?.addEventListener("click", startGame);
     ui.action?.addEventListener("click", doAction);
+    ui.openShop?.addEventListener("click", openShop);
+    ui.arrangeButton?.addEventListener("click", toggleArrangement);
     CARES.forEach((care) => ui.care[care]?.addEventListener("click", () => careForPlant(care)));
     ui.nextDay?.addEventListener("click", nextDay);
     ui.upgradeButton?.addEventListener("click", () => openModal(ui.upgradeModal, true));
@@ -762,14 +952,208 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (ui.rotateLeft) ui.rotateLeft.hidden = false;
     if (ui.rotateRight) ui.rotateRight.hidden = false;
+    if (ui.arrangeButton) ui.arrangeButton.hidden = false;
     ensureAudio();
     sound("open");
-    spawnCustomer(false);
+    if (state.phase === "supply") {
+      showSupplierBoard();
+    } else if (state.phase === "preparation") {
+      run.arranging = true;
+      updateCrates();
+    } else if (state.phase === "report") {
+      showReport();
+    } else {
+      state.phase = "open";
+      spawnCustomer(false);
+    }
     updateUi();
     resize();
     const hello = state.day === 1 ? "Day one. The plants are nervous too." : `Day ${state.day}. Fresh leaves, fresh chances.`;
-    const challenge = state.displayGoal && !state.displayGoal.claimed ? ` Today’s display: ${state.displayGoal.copy}` : "";
-    toast(`${hello}${challenge}`, challenge ? 4800 : 3100);
+    const morning = state.phase === "supply" ? " Read the neighborhood notes and choose one nursery delivery." : "";
+    toast(`${hello}${morning}`, morning ? 4300 : 3100);
+  }
+
+  function showSupplierBoard() {
+    if (!ui.supplierBoard) return;
+    if (!state.supplierOptions?.length) {
+      state.supplierOptions = generateSupplierLots({
+        day: state.day,
+        customers: state.customers,
+        inventory: state.inventory,
+        coins: state.coins,
+        capacity: state.inventoryCapacity,
+      });
+    }
+    renderSupplierBoard();
+    ui.supplierBoard.hidden = false;
+    ui.supplierBoard.classList.add("is-open");
+    ui.supplierBoard.setAttribute("aria-hidden", "false");
+    if (ui.game) ui.game.inert = true;
+    requestAnimationFrame(() => ui.supplierOptions?.querySelector("button:not([disabled])")?.focus());
+  }
+
+  function renderSupplierBoard() {
+    if (!ui.supplierOptions) return;
+    if (ui.supplierTitle) ui.supplierTitle.textContent = `Day ${state.day} nursery clipboard`;
+    if (ui.supplierForecast) {
+      const needs = [...new Set(state.customers.map((customer) => customer.need))];
+      ui.supplierForecast.textContent = `Neighborhood notes: homes are asking for ${needs.join(", ")}. You have ${state.inventory.length}/${state.inventoryCapacity} plants and ${state.coins} coins.`;
+    }
+    if (ui.supplierStatus) ui.supplierStatus.textContent = "Choose one delivery. Unsold plants stay in your shop for later days.";
+    ui.supplierOptions.replaceChildren();
+    state.supplierOptions.forEach((lot, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "supplier-option";
+      button.style.setProperty("--option-color", ["#577a55", "#d49362", "#836b8c", "#8c7653"][index % 4]);
+      const affordable = lot.affordable !== false && state.coins >= (lot.cost || 0);
+      const fits = lot.fitsCapacity !== false && state.inventory.length + (lot.quantity ?? lot.speciesNames?.length ?? 0) <= state.inventoryCapacity;
+      const selectable = lot.selectable !== false && affordable && fits;
+      button.disabled = !selectable;
+      button.setAttribute("aria-pressed", "false");
+
+      const header = document.createElement("div");
+      header.className = "supplier-option-header";
+      const name = document.createElement("h3");
+      name.className = "supplier-option-name";
+      name.textContent = lot.name;
+      const cost = document.createElement("span");
+      cost.className = "supplier-cost";
+      cost.textContent = lot.speciesNames?.length
+        ? lot.cost ? `${lot.cost} coins` : "Rescue tab · 0"
+        : "No order";
+      header.append(name, cost);
+
+      const copy = document.createElement("p");
+      copy.className = "supplier-option-copy";
+      copy.textContent = lot.description || "A small nursery assortment for today’s shop.";
+      const contents = document.createElement("p");
+      contents.className = "supplier-contents";
+      contents.textContent = supplierContents(lot);
+      const badges = document.createElement("div");
+      badges.className = "supplier-badges";
+      const condition = document.createElement("span");
+      condition.className = "supplier-badge";
+      condition.textContent = lot.condition === "stressed" ? "Needs care" : lot.speciesNames?.length ? "Healthy stock" : "Current stock";
+      const capacity = document.createElement("span");
+      capacity.className = "supplier-badge";
+      capacity.textContent = fits ? `${lot.speciesNames?.length || 0} spaces used` : "Not enough space";
+      badges.append(condition, capacity);
+      if (!affordable) {
+        const unavailable = document.createElement("span");
+        unavailable.className = "supplier-badge";
+        unavailable.textContent = "Not enough coins";
+        badges.append(unavailable);
+      }
+      if (lot.coversRequests === false) {
+        const uncovered = document.createElement("span");
+        uncovered.className = "supplier-badge";
+        uncovered.textContent = "Does not cover all notes";
+        badges.append(uncovered);
+      }
+      button.append(header, copy, contents, badges);
+      button.addEventListener("click", () => chooseSupplierLot(lot, button));
+      ui.supplierOptions.append(button);
+    });
+  }
+
+  function supplierContents(lot) {
+    if (!lot.speciesNames?.length) return "Use the plants already in the shop";
+    if (lot.reveal?.level === "count-only" || lot.supplierId === "mystery-rescue-lot" || lot.id?.includes("mystery")) {
+      return `${lot.speciesNames.length} mystery plants · identities hidden until unboxed`;
+    }
+    return lot.speciesNames.join(" · ");
+  }
+
+  function chooseSupplierLot(lot, button) {
+    if (state.phase !== "supply" || button.disabled) return;
+    const quantity = lot.speciesNames?.length || 0;
+    if (state.inventory.length + quantity > state.inventoryCapacity) {
+      sound("error");
+      if (ui.supplierStatus) ui.supplierStatus.textContent = `That lot needs ${quantity} spaces; only ${state.inventoryCapacity - state.inventory.length} are open.`;
+      return;
+    }
+    if (state.coins < (lot.cost || 0)) {
+      sound("error");
+      if (ui.supplierStatus) ui.supplierStatus.textContent = "The till cannot quite cover that nursery invoice.";
+      return;
+    }
+    state.selectedLotId = lot.id;
+    state.coins -= lot.cost || 0;
+    state.dailyStockCost += lot.cost || 0;
+    const speciesNames = [...(lot.speciesNames || [])];
+    const acquisitionCosts = allocateLotCosts(speciesNames, lot.cost || 0);
+    state.crateQueue = speciesNames.map((speciesName, index) => ({
+      id: `${lot.id}-plant-${index}`,
+      speciesId: speciesOfName(speciesName).id,
+      speciesName,
+      seed: state.day * 1009 + index * 131 + lot.id.length * 17,
+      condition: lot.condition || "healthy",
+      acquisitionCost: acquisitionCosts[index] || 0,
+      status: "boxed",
+    }));
+    state.crates = state.crateQueue.length;
+    state.deliveryCondition = lot.condition || "healthy";
+    state.phase = "preparation";
+    state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+    run.arranging = true;
+    ui.supplierOptions.querySelectorAll("button").forEach((item) => {
+      item.disabled = true;
+      item.setAttribute("aria-pressed", String(item === button));
+      item.classList.toggle("is-selected", item === button);
+    });
+    if (ui.supplierStatus) ui.supplierStatus.textContent = quantity
+      ? `${lot.name} booked. The cartons are on the care bench.`
+      : "No delivery today. Your existing stock is ready to arrange.";
+    save();
+    setTimeout(() => {
+      if (ui.supplierBoard) {
+        ui.supplierBoard.hidden = true;
+        ui.supplierBoard.classList.remove("is-open");
+        ui.supplierBoard.setAttribute("aria-hidden", "true");
+      }
+      if (ui.game) ui.game.inert = false;
+      updateCrates();
+      updateUi();
+      canvas.focus({ preventScroll: true });
+      sound("crate");
+      toast(quantity
+        ? `${lot.name} arrived. Open ${quantity} carton${quantity === 1 ? "" : "s"}, care for the plants, then arrange your displays.`
+        : "No invoice, no boxes. Arrange the stock you have, then open the shop.", 4800);
+    }, reduceMotion ? 0 : 420);
+  }
+
+  function openShop() {
+    if (state.phase !== "preparation" || state.crates > 0 || run.crateAnimation) return;
+    if (!inventoryCoversCustomers(state.inventory, state.customers)) {
+      sound("error");
+      toast("The neighborhood notes are not covered yet. Check that every carton made it onto the bench.");
+      return;
+    }
+    cancelMove();
+    run.arranging = false;
+    state.phase = "open";
+    save();
+    sound("open");
+    spawnCustomer(true);
+    updateUi();
+    toast("The sign flips to OPEN. Your first customer is on the way.", 3600);
+  }
+
+  function toggleArrangement() {
+    if (state.phase === "supply" || state.phase === "report" || run.busy) return;
+    if (state.phase === "preparation") {
+      toast("Preparation time is already arrangement time. Open the shop when the displays feel right.");
+      return;
+    }
+    if (run.arranging) cancelMove();
+    run.arranging = !run.arranging;
+    sound("place");
+    toast(run.arranging
+      ? "Arrangement mode on. Move and swap plants without offering them."
+      : "Arrangement mode off. Placed plants can be offered to customers.");
+    updateSlotGlow();
+    updateUi();
   }
 
   function openModal(element, open) {
@@ -779,7 +1163,7 @@ document.addEventListener("DOMContentLoaded", () => {
     element.hidden = !open;
     element.classList.toggle("is-open", open);
     element.setAttribute("aria-hidden", String(!open));
-    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.report].some((modal) => modal && !modal.hidden);
+    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.report, ui.supplierBoard].some((modal) => modal && !modal.hidden);
     if (ui.game) ui.game.inert = anyModalOpen;
     if (open) {
       requestAnimationFrame(() => element.querySelector("button:not([disabled])")?.focus());
@@ -812,8 +1196,8 @@ document.addEventListener("DOMContentLoaded", () => {
       owned: state.upgrades.growLamp,
       title: "Secondhand grow lamp",
       ownedTitle: "Grow lamp installed",
-      copy: "Automatically mists displayed plants each new morning.",
-      ownedCopy: "Its honey-colored light mists every displayed plant overnight.",
+      copy: "Automatically mists humidity-loving displayed plants each new morning.",
+      ownedCopy: "Its honey-colored light handles morning mist for plants that enjoy it.",
       cost: 50,
       action: buyGrowLamp,
     });
@@ -929,10 +1313,14 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.dataset.selection = entity.kind;
     if (entity.kind === "plant") {
       const plant = state.inventory.find((item) => item.id === entity.id);
-      run.carried = plant && !Number.isInteger(plant.slot) ? plant.id : null;
+      const comparingSwap = run.carried && run.carried !== plant?.id && (run.arranging || state.phase === "preparation");
+      if (!comparingSwap) {
+        run.carried = plant && !Number.isInteger(plant.slot) ? plant.id : null;
+        if (!run.carried) run.moveOrigin = null;
+      }
       sound("pluck");
     } else if (entity.kind !== "slot") {
-      run.carried = null;
+      cancelMove();
     }
     updateSelectionRing();
     updateSlotGlow();
@@ -959,11 +1347,19 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (kind === "plant") {
       const plant = state.inventory.find((item) => item.id === id);
       if (!plant) return;
+      if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
+        swapPlants(run.carried, plant.id);
+        return;
+      }
       if (!Number.isInteger(plant.slot)) {
         const slot = firstFreeSlot(plant);
         if (slot === null) toast("Every display is full. A good problem, briefly.");
         else placePlant(plant.id, slot);
-      } else offerPlant(plant);
+      } else if (run.arranging || state.phase === "preparation") {
+        beginMove(plant);
+      } else if (state.phase === "open") {
+        offerPlant(plant);
+      }
     } else if (kind === "customer") {
       const person = currentCustomer();
       toast(`${person.name} is hoping for something ${person.need}. Tap a plant to offer it.`);
@@ -973,15 +1369,98 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function beginMove(plant) {
+    if (!plant) return;
+    if (!Number.isInteger(plant.slot)) {
+      run.carried = plant.id;
+      run.moveOrigin = null;
+      updateSlotGlow();
+      updateUi();
+      return;
+    }
+    run.moveOrigin = plant.slot;
+    run.carried = plant.id;
+    sound("pluck");
+    toast(`Moving ${plant.species}. Green rings match its light; select another plant to swap.`);
+    updateSlotGlow();
+    updateUi();
+  }
+
+  function cancelMove() {
+    if (!run.carried) {
+      run.moveOrigin = null;
+      return;
+    }
+    const plant = state.inventory.find((item) => item.id === run.carried);
+    run.carried = null;
+    run.moveOrigin = null;
+    updateSlotGlow();
+  }
+
+  function swapPlants(carriedId, targetId) {
+    const carried = state.inventory.find((plant) => plant.id === carriedId);
+    const other = state.inventory.find((plant) => plant.id === targetId);
+    if (!carried || !other || !Number.isInteger(other.slot)) return;
+    if (!Number.isInteger(run.moveOrigin)) {
+      sound("error");
+      toast("A new delivery needs an empty display first; placed plants can then swap freely.");
+      return;
+    }
+    const destinationIndex = other.slot;
+    const originIndex = run.moveOrigin;
+    const destination = SLOT_DATA[destinationIndex];
+    const origin = SLOT_DATA[originIndex];
+    const carriedObject = plantObjects.get(carried.id);
+    const otherObject = plantObjects.get(other.id);
+    carried.slot = destinationIndex;
+    other.slot = originIndex;
+    if (carriedObject) queueMover({
+      object: carriedObject,
+      from: carriedObject.position.clone(),
+      to: new THREE.Vector3(destination.x, destination.y, destination.z),
+      startScale: carriedObject.scale.x,
+      endScale: scaleForSlot(carriedObject, destination),
+      time: 0,
+      duration: 0.5,
+      arc: 0.62,
+    });
+    if (otherObject) queueMover({
+      object: otherObject,
+      from: otherObject.position.clone(),
+      to: new THREE.Vector3(origin.x, origin.y, origin.z),
+      startScale: otherObject.scale.x,
+      endScale: scaleForSlot(otherObject, origin),
+      time: 0,
+      duration: 0.5,
+      arc: 0.52,
+    });
+    const goalWon = evaluateDisplayGoal(carried, destination) || evaluateDisplayGoal(other, origin);
+    run.carried = null;
+    run.moveOrigin = null;
+    run.selected = carriedObject ? { kind: "plant", id: carried.id, object: carriedObject } : null;
+    save();
+    sound(goalWon ? "upgrade" : "place");
+    toast(goalWon
+      ? `A clever swap completes the vignette. +${state.displayGoal.rewardCoins} coins and +${state.displayGoal.rewardBloom} Bloom.`
+      : `${carried.species} and ${other.species} traded places.`);
+    updateSlotGlow();
+    updateUi();
+  }
+
   function unpackCrate() {
     if (state.crates <= 0 || !state.crateQueue.length) {
       toast("Only packing straw. It smells oddly optimistic.");
       return;
     }
     const carton = run.crate?.children[state.crates - 1];
-    const speciesName = state.crateQueue.shift();
-    const plant = plantRecord(speciesName, state.day * 100 + state.crates * 17);
-    if (state.crates === 3) plant.hydration = 36 + (state.day % 7);
+    const delivery = state.crateQueue.shift();
+    const speciesName = deliverySpeciesName(delivery);
+    const rescue = (delivery?.condition || state.deliveryCondition) === "stressed";
+    const plant = plantRecord(speciesName, delivery?.seed || state.day * 100 + state.crates * 17, {
+      hydration: rescue ? 30 + ((state.day + state.crates * 3) % 11) : 70 + ((state.day + state.crates * 7) % 21),
+      supplierLot: state.selectedLotId,
+      acquisitionCost: Number.isFinite(delivery?.acquisitionCost) ? delivery.acquisitionCost : 0,
+    });
     state.inventory.push(plant);
     state.crates -= 1;
     const object = createPlant(plant);
@@ -1099,9 +1578,12 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCrates();
     updateSelectionRing();
     updateSlotGlow();
+    const lastCarton = state.crates === 0;
     toast(plant.hydration < 42
       ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
-      : `${plant.species}! A little rumpled, fundamentally promising.`);
+      : lastCarton
+        ? `${plant.species}! Last carton open. Care, arrange, then use Open the shop when ready.`
+        : `${plant.species}! A little rumpled, fundamentally promising.`);
     updateUi();
   }
 
@@ -1113,6 +1595,12 @@ document.addEventListener("DOMContentLoaded", () => {
         && slot.zone === state.displayGoal.zone
         && (!object || scaleForSlot(object, slot) >= slot.size * 0.74));
       if (goalIndex >= 0) return goalIndex;
+    }
+    if (plant) {
+      const idealIndex = SLOT_DATA.findIndex((slot, index) => !used.has(index)
+        && lightFit(plant, index).level === "ideal"
+        && (!object || scaleForSlot(object, slot) >= slot.size * 0.74));
+      if (idealIndex >= 0) return idealIndex;
     }
     for (let index = 0; index < SLOT_DATA.length; index += 1) {
       if (used.has(index)) continue;
@@ -1135,7 +1623,7 @@ document.addEventListener("DOMContentLoaded", () => {
     plant.slot = slotIndex;
     const object = plantObjects.get(id);
     if (object) {
-      movers.push({
+      queueMover({
         object,
         from: object.position.clone(),
         to: new THREE.Vector3(target.x, target.y, target.z),
@@ -1147,12 +1635,13 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     run.carried = null;
+    run.moveOrigin = null;
     const goalWon = evaluateDisplayGoal(plant, target);
     save();
     sound(goalWon ? "upgrade" : "place");
     toast(goalWon
       ? `Display vignette complete! +${state.displayGoal.rewardCoins} coins and +${state.displayGoal.rewardBloom} Bloom.`
-      : `${plant.species} has found its light.`);
+      : `${plant.species}: ${lightFit(plant).label}.`);
     updateSlotGlow();
     updateUi();
   }
@@ -1165,7 +1654,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const plant = state.inventory.find((item) => item.id === run.selected.id);
     const object = plantObjects.get(run.selected.id);
     if (!plant || !object) return;
+    const spec = speciesOf(plant);
+    const beneficial = spec.beneficialCare.includes(type);
     const canRewater = type === "water" && plant.hydration < 78;
+    if (type === "water" && plant.hydration >= 78 && !plant.care.water) {
+      toast(`${plant.species} still has damp soil. Save the watering can for later.`);
+      sound("error");
+      return;
+    }
     if (plant.care[type] && !canRewater) {
       toast(type === "water" ? "No swamp ambitions today." : `Already ${type === "mist" ? "misty" : "tidy"} enough.`);
       sound("error");
@@ -1174,7 +1670,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const firstCare = !plant.care[type];
     const wasDrooping = plant.hydration < 42;
     plant.care[type] = true;
-    if (firstCare) {
+    if (firstCare && beneficial) {
       state.dailyCare += 1;
       state.bloom += 1;
     }
@@ -1194,15 +1690,19 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       burst(object.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 0x719e65, 12);
     }
-    if (!reduceMotion) movers.push({ object, from: object.position.clone(), to: object.position.clone(), startScale: object.scale.x, endScale: object.scale.x, time: 0, duration: 0.42, arc: 0.16 });
+    if (!reduceMotion) queueMover({ object, from: object.position.clone(), to: object.position.clone(), startScale: object.scale.x, endScale: object.scale.x, time: 0, duration: 0.42, arc: 0.16 });
     save();
     sound(type);
     const messages = {
       water: recoveryReward
         ? `${plant.species} lifts every leaf. Thirst rescue! +1 Bloom.`
         : `${plant.species} drinks with surprising urgency.`,
-      mist: `${plant.species} is now experiencing weather.`,
-      prune: `One tiny haircut. Considerable confidence.`,
+      mist: beneficial
+        ? `${plant.species} is now experiencing weather. +1 Bloom.`
+        : `${plant.species} tolerates the weather, but prefers drier air. No care bonus.`,
+      prune: beneficial
+        ? `One tiny haircut. Considerable confidence. +1 Bloom.`
+        : `${plant.species} would rather keep that growth. No care bonus.`,
     };
     toast(messages[type]);
     updateUi();
@@ -1218,21 +1718,29 @@ document.addEventListener("DOMContentLoaded", () => {
       save();
       return;
     }
+    const remainingCustomers = state.customers.slice(state.customerIndex + 1);
+    const remainingInventory = state.inventory.filter((item) => item.id !== plant.id);
+    if (!inventoryCoversCustomers(remainingInventory, remainingCustomers)) {
+      sound("error");
+      toast(`${person.name} would love it, but that plant is the only good match for someone later. Try another ${person.need} plant.`);
+      return;
+    }
     run.busy = true;
-    const careCount = CARES.filter((care) => plant.care[care]).length;
+    const careCount = speciesOf(plant).beneficialCare.filter((care) => plant.care[care]).length;
     const extras = [
       plant.traits.includes(person.bonusTrait),
-      Boolean(plant.care[person.careWish]),
-      plant.hydration >= 68,
+      Boolean(speciesOf(plant).beneficialCare.includes(person.careWish) && plant.care[person.careWish]),
+      conditionOf(plant).label === "thriving",
     ].filter(Boolean).length;
     const perfect = extras === 3;
-    const payout = plant.price + careCount * 2 + extras * 3 + (perfect ? 3 : 0) + (state.upgrades.growLamp ? 2 : 0);
+    const payout = plant.price + careCount * 2 + extras * 3 + (perfect ? 3 : 0);
     state.coins += payout;
     state.bloom += 2 + extras;
     if (perfect) state.dailyPerfects += 1;
     const perfectDayBonus = perfect && state.dailyPerfects === 3;
     if (perfectDayBonus) state.bloom += 8;
     state.dailyRevenue += payout;
+    state.dailyCostOfGoods += Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
     state.dailySales += 1;
     state.customerIndex += 1;
     const object = plantObjects.get(plant.id);
@@ -1241,7 +1749,7 @@ document.addEventListener("DOMContentLoaded", () => {
       stageCustomerCarry(object);
       const index = interactive.indexOf(object);
       if (index >= 0) interactive.splice(index, 1);
-      movers.push({ object, from: object.position.clone(), to: target, startScale: object.scale.x, endScale: 0.08, time: 0, duration: 0.62, arc: 1.2, remove: true });
+      queueMover({ object, from: object.position.clone(), to: target, startScale: object.scale.x, endScale: 0.08, time: 0, duration: 0.62, arc: 1.2, remove: true });
       plantObjects.delete(plant.id);
     }
     state.inventory = state.inventory.filter((item) => item.id !== plant.id);
@@ -1376,6 +1884,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showReport() {
+    state.phase = "report";
+    run.arranging = false;
+    cancelMove();
     run.busy = true;
     document.body.dataset.gameState = "report";
     if (ui.report) {
@@ -1387,12 +1898,18 @@ document.addEventListener("DOMContentLoaded", () => {
     requestAnimationFrame(() => ui.nextDay?.focus());
     if (ui.reportTitle) ui.reportTitle.textContent = `Day ${String(state.day).padStart(2, "0")} — shutters down`;
     if (ui.reportCopy) {
+      const grossProfit = state.dailyRevenue - state.dailyCostOfGoods;
+      const tillChange = state.coins - state.dailyStartingCoins;
+      const bloomEarned = Math.max(0, state.bloom - state.dailyBloomStart);
+      const idealDisplays = state.inventory.filter((plant) => Number.isInteger(plant.slot) && lightFit(plant).level === "ideal").length;
+      const standing = bloomStanding();
       const flourish = state.dailyCare >= 6 ? "The leaves are immaculate." : "A few leaves could use attention tomorrow.";
       const display = state.displayGoal?.claimed ? "Display challenge complete." : "The display challenge can try again tomorrow.";
-      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins earned · ${state.dailyCare} care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. ${display} ${flourish}`;
+      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins revenue − ${state.dailyCostOfGoods} sold-stock cost = ${grossProfit >= 0 ? "+" : ""}${grossProfit} gross profit · ${state.dailyStockCost} coins spent at the nursery · ${tillChange >= 0 ? "+" : ""}${tillChange} till change · +${bloomEarned} Bloom · ${state.inventory.length} plants remain in stock · ${idealDisplays} in ideal light · ${state.dailyCare} helpful care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. Shop standing: ${standing.name} · ${standing.copy}. ${display} ${flourish}`;
     }
     sound("report");
     save();
+    updateUi();
   }
 
   function nextDay() {
@@ -1400,6 +1917,8 @@ document.addEventListener("DOMContentLoaded", () => {
     state.customerIndex = 0;
     state.dailySales = 0;
     state.dailyRevenue = 0;
+    state.dailyStockCost = 0;
+    state.dailyCostOfGoods = 0;
     state.dailyCare = 0;
     state.dailyPerfects = 0;
     state.dailyRecoveries = 0;
@@ -1407,15 +1926,19 @@ document.addEventListener("DOMContentLoaded", () => {
     state.crateQueue = [];
     state.displayGoal = null;
     state.inventory.forEach((plant) => {
-      plant.care = { water: false, mist: Boolean(state.upgrades.growLamp && Number.isInteger(plant.slot)), prune: false };
+      const morningMist = Boolean(state.upgrades.growLamp
+        && Number.isInteger(plant.slot)
+        && speciesOf(plant).beneficialCare.includes("mist"));
+      plant.care = { water: false, mist: morningMist, prune: false };
       plant.recoveredToday = false;
       plant.thirstWarned = plant.hydration <= 34;
     });
-    if (state.upgrades.growLamp) state.bloom += state.inventory.filter((plant) => Number.isInteger(plant.slot)).length;
     setupDay(true);
     run.busy = false;
     run.selected = null;
     run.carried = null;
+    run.moveOrigin = null;
+    run.arranging = false;
     document.body.dataset.gameState = "playing";
     if (ui.report) {
       ui.report.hidden = true;
@@ -1426,10 +1949,10 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.focus({ preventScroll: true });
     rebuildPlants();
     updateCrates();
-    spawnCustomer(true);
     save();
+    showSupplierBoard();
     sound("open");
-    toast(state.upgrades.growLamp ? "Morning. The grow lamp handled the misting shift." : "Morning delivery! Three mysterious cartons, naturally.");
+    toast(state.upgrades.growLamp ? "Morning. The grow lamp handled the misting shift; the nursery clipboard is ready." : "Morning. Check the neighborhood notes before booking today’s delivery.");
     updateUi();
   }
 
@@ -1437,12 +1960,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ui.day) ui.day.textContent = String(state.day).padStart(2, "0");
     if (ui.coins) ui.coins.textContent = String(state.coins);
     if (ui.bloom) ui.bloom.textContent = String(state.bloom);
+    if (ui.bloom) {
+      const standing = bloomStanding();
+      ui.bloom.title = `${standing.name} · ${standing.copy}`;
+    }
+    document.body.dataset.shopPhase = state.phase;
     if (ui.soundButton) {
       ui.soundButton.setAttribute("aria-pressed", String(state.sound));
       ui.soundButton.dataset.sound = state.sound ? "on" : "off";
       ui.soundButton.title = state.sound ? "Mute sound" : "Turn sound on";
     }
-    const person = currentCustomer();
+    const person = state.phase === "open" ? currentCustomer() : null;
     const saleTransition = saleMessage || run.customerTween?.mode === "exit";
     if (ui.customerCard) {
       ui.customerCard.hidden = !person || saleTransition;
@@ -1459,35 +1987,77 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    if (ui.arrangeButton) {
+      const active = state.phase === "preparation" || run.arranging;
+      ui.arrangeButton.hidden = !run.started || state.phase === "supply" || state.phase === "report";
+      ui.arrangeButton.setAttribute("aria-pressed", String(active));
+      ui.arrangeButton.classList.toggle("is-active", active);
+      ui.arrangeButton.title = active ? "Finish arranging displays" : "Arrange displays";
+    }
+    if (ui.openShop) {
+      const readyToOpen = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
+      ui.openShop.hidden = !readyToOpen;
+      ui.openShop.disabled = !readyToOpen || !inventoryCoversCustomers(state.inventory, state.customers);
+    }
+
     let action = "Select something";
     let disabled = true;
-    let title = state.crates ? "Rescue the delivery" : person ? `A plant for ${person.name}` : "Tidy the leaves";
-    let copy = state.crates
-      ? `${state.crates} carton${state.crates === 1 ? "" : "s"} arrived with suspicious air holes. Open one to meet its plant.`
-      : person ? `Find a ${person.need} plant, care for it, then make the match.` : "The shop is quiet for a minute.";
+    let title = "Choose today’s stock";
+    let copy = "Read the nursery clipboard and book one delivery.";
+    if (state.phase === "preparation") {
+      title = state.crates ? "Unpack the delivery" : "Prepare the displays";
+      copy = state.crates
+        ? `${state.crates} carton${state.crates === 1 ? "" : "s"} left. Open, care for, and place every arrival.`
+        : "Care for anything thirsty, arrange the light, then open the shop when you are ready.";
+    } else if (state.phase === "open") {
+      title = person ? `A plant for ${person.name}` : "The last parcel is leaving";
+      copy = person ? `Find a ${person.need} plant, care for it, then make the match.` : "Wrapping the last pot for its new home.";
+    } else if (state.phase === "report") {
+      title = "Shutters down";
+      copy = "The day’s numbers and small victories are ready.";
+    }
     if (state.displayGoal) copy += ` ${goalSummary()}.`;
     const selected = run.selected;
     if (selected?.kind === "crate") {
       action = state.crates ? `Open carton · ${state.crates} left` : "All cartons opened";
-      disabled = state.crates <= 0;
+      disabled = state.phase !== "preparation" || state.crates <= 0;
     } else if (selected?.kind === "plant") {
       const plant = state.inventory.find((item) => item.id === selected.id);
       if (plant) {
-        const careCount = CARES.filter((care) => plant.care[care]).length;
+        const spec = speciesOf(plant);
+        const careCount = spec.beneficialCare.filter((care) => plant.care[care]).length;
         const condition = conditionOf(plant);
+        const fit = lightFit(plant);
+        const helpfulCare = spec.beneficialCare.join(" · ");
         const goalFit = state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)
           ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
           : "";
         title = plant.species;
-        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} soil ${Math.round(plant.hydration)}% · ${careCount}/3 care.${goalFit}`;
-        action = Number.isInteger(plant.slot) && person ? `Offer to ${person.name}` : "Place on display";
-        disabled = run.busy || (Number.isInteger(plant.slot) && !person);
+        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} · soil ${Math.round(plant.hydration)}% · ${fit.label} · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
+          const carried = state.inventory.find((item) => item.id === run.carried);
+          action = `Swap with ${carried?.species || "moving plant"}`;
+          disabled = !Number.isInteger(run.moveOrigin) || !Number.isInteger(plant.slot);
+        } else if (run.carried === plant.id) {
+          action = "Choose a glowing display spot";
+          disabled = true;
+        } else if (!Number.isInteger(plant.slot)) {
+          action = "Place on display";
+          disabled = false;
+        } else if (run.arranging || state.phase === "preparation") {
+          action = "Move this plant";
+          disabled = false;
+        } else if (person) {
+          action = `Offer to ${person.name}`;
+          disabled = false;
+        }
       }
     } else if (selected?.kind === "customer" && person) {
       action = `What does ${person.name} need?`;
       disabled = false;
     } else if (selected?.kind === "slot") {
-      action = "An empty display spot";
+      action = run.carried ? "Place in this light" : "An empty display spot";
+      disabled = !run.carried;
     }
     if (saleTransition) {
       title = run.lastSaleGrade === "perfect" ? "A perfect match" : run.lastSaleGrade === "lovely" ? "A lovely match" : "A good match";
@@ -1503,20 +2073,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const plant = selected?.kind === "plant" ? state.inventory.find((item) => item.id === selected.id) : null;
     if (ui.careTray) {
-      ui.careTray.hidden = !plant;
-      ui.careTray.classList.toggle("is-visible", Boolean(plant));
+      const showCare = Boolean(plant && state.phase !== "supply" && state.phase !== "report");
+      ui.careTray.hidden = !showCare;
+      ui.careTray.classList.toggle("is-visible", showCare);
     }
     CARES.forEach((care) => {
       if (!ui.care[care]) return;
+      const beneficial = Boolean(plant && speciesOf(plant).beneficialCare.includes(care));
       const done = care === "water"
         ? Boolean(plant?.care.water && plant.hydration >= 78)
         : Boolean(plant?.care[care]);
       const needed = care === "water"
         ? Boolean(plant && (!plant.care.water || plant.hydration < 78))
-        : Boolean(plant && !plant.care[care]);
+        : Boolean(plant && beneficial && !plant.care[care]);
       ui.care[care].disabled = !plant || run.busy;
       ui.care[care].classList.toggle("is-done", done);
       ui.care[care].dataset.needed = String(needed);
+      ui.care[care].dataset.helpful = String(beneficial);
+      ui.care[care].title = beneficial ? `Helpful care for ${plant?.species || "this plant"}` : `Optional; ${plant?.species || "this plant"} does not benefit from this`;
       ui.care[care].setAttribute("aria-pressed", String(done));
       if (care === "water" && plant) ui.care[care].setAttribute("aria-label", `Water plant, soil hydration ${Math.round(plant.hydration)} percent`);
     });
@@ -1607,8 +2181,8 @@ document.addEventListener("DOMContentLoaded", () => {
     while (object && !object.userData.entity) object = object.parent;
     const entity = object?.userData.entity;
     if (!entity) {
+      cancelMove();
       run.selected = null;
-      run.carried = null;
       if (run.selectionRing) run.selectionRing.visible = false;
       document.body.dataset.selection = "none";
       updateSlotGlow();
@@ -1616,7 +2190,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (entity.kind === "slot" && run.carried) {
-      placePlant(run.carried, entity.id);
+      const occupant = state.inventory.find((plant) => plant.id === object.userData.occupantId)
+        || state.inventory.find((plant) => plant.slot === entity.id && plant.id !== run.carried);
+      if (occupant && (run.arranging || state.phase === "preparation")) swapPlants(run.carried, occupant.id);
+      else placePlant(run.carried, entity.id);
       return;
     }
     selectEntity(entity, object);
@@ -1683,7 +2260,7 @@ document.addEventListener("DOMContentLoaded", () => {
       openModal(ui.helpModal, false);
       return;
     }
-    if (!ui.helpModal?.hidden || !ui.upgradeModal?.hidden || !ui.report?.hidden) return;
+    if (!ui.helpModal?.hidden || !ui.upgradeModal?.hidden || !ui.report?.hidden || !ui.supplierBoard?.hidden) return;
     if (!run.started || event.target instanceof HTMLInputElement) return;
     if (event.key === "1") careForPlant("water");
     if (event.key === "2") careForPlant("mist");
@@ -1836,6 +2413,18 @@ document.addEventListener("DOMContentLoaded", () => {
         save();
       }
     }
+  }
+
+  function queueMover(move) {
+    for (let index = movers.length - 1; index >= 0; index -= 1) {
+      const current = movers[index];
+      if (current.object !== move.object) continue;
+      current.object.position.copy(current.to);
+      current.object.scale.setScalar(current.endScale);
+      if (current.remove) current.object.removeFromParent();
+      movers.splice(index, 1);
+    }
+    movers.push(move);
   }
 
   function updateMovers(dt) {
