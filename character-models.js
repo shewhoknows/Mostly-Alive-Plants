@@ -141,37 +141,51 @@ function buildLeg(parent, side, materials, trouserMaterial) {
 }
 
 function buildFace(head, materials, preset, rng) {
-  addSphere(head, 0.043, [-0.12, 0.055, 0.303], materials.eyeWhite, "left-eye-white", [1.12, 0.95, 0.46], 0);
-  addSphere(head, 0.043, [0.12, 0.055, 0.303], materials.eyeWhite, "right-eye-white", [1.12, 0.95, 0.46], 0);
-  addSphere(head, 0.022, [-0.12, 0.054, 0.329], materials.eye, "left-eye", [0.85, 1, 0.45], 0);
-  addSphere(head, 0.022, [0.12, 0.054, 0.329], materials.eye, "right-eye", [0.85, 1, 0.45], 0);
-  addBox(head, [0.1, 0.018, 0.018], [-0.12, 0.132, 0.311], materials.hair, "left-eyebrow", [0, 0, -0.06]);
-  addBox(head, [0.1, 0.018, 0.018], [0.12, 0.132, 0.311], materials.hair, "right-eyebrow", [0, 0, 0.06]);
-  addMesh(
+  // Simple bead eyes read much more warmly at the shop camera's distance than
+  // high-contrast white eyeballs. Tiny catchlights keep the faces lively.
+  [-1, 1].forEach((side) => {
+    const label = side < 0 ? "left" : "right";
+    addSphere(head, 0.031, [side * 0.112, 0.058, 0.304], materials.eye, `${label}-eye`, [0.78, 1.04, 0.44], 0);
+    addSphere(head, 0.008, [side * 0.106, 0.068, 0.32], materials.eyeHighlight, `${label}-eye-catchlight`, [0.82, 1, 0.35], 0);
+    addCylinder(
+      head,
+      [0.007, 0.007],
+      0.067,
+      [side * 0.112, 0.145, 0.271],
+      materials.brow,
+      `${label}-eyebrow`,
+      6,
+      [0, 0, side * -0.11],
+    );
+  });
+
+  addSphere(head, 0.034, [0, -0.012, 0.308], materials.skinShade, "nose", [0.62, 0.78, 0.42], 0);
+
+  const smile = addMesh(
     head,
-    new THREE.ConeGeometry(0.045, 0.105, 6),
-    materials.skinShade,
-    "nose",
-    [0, -0.015, 0.345],
-    [Math.PI / 2, 0, 0],
+    new THREE.TorusGeometry(0.047 + rng() * 0.006, 0.008, 4, 10, Math.PI),
+    materials.mouth,
+    "smile",
+    [0, -0.096, 0.311],
+    [0, 0, Math.PI],
   );
-  addBox(head, [0.11, 0.024, 0.018], [0, -0.135, 0.318], materials.mouth, "smile", [0, 0, rng() * 0.08 - 0.04]);
-  addSphere(head, 0.04, [-0.2, -0.075, 0.282], materials.cheek, "left-cheek", [1.15, 0.65, 0.32], 0);
-  addSphere(head, 0.04, [0.2, -0.075, 0.282], materials.cheek, "right-cheek", [1.15, 0.65, 0.32], 0);
+  smile.castShadow = false;
+  addSphere(head, 0.033, [-0.19, -0.067, 0.255], materials.cheek, "left-cheek", [1.1, 0.48, 0.24], 0);
+  addSphere(head, 0.033, [0.19, -0.067, 0.255], materials.cheek, "right-cheek", [1.1, 0.48, 0.24], 0);
 
   if (preset.glasses) {
     [-1, 1].forEach((side) => {
       addMesh(
         head,
-        new THREE.TorusGeometry(0.093, 0.012, 5, 12),
+        new THREE.TorusGeometry(0.069, 0.008, 5, 12),
         materials.glasses,
         side < 0 ? "left-glasses-lens" : "right-glasses-lens",
-        [side * 0.115, 0.055, 0.344],
+        [side * 0.105, 0.06, 0.31],
         null,
-        [1.08, 0.82, 1],
+        [1.06, 0.86, 1],
       );
     });
-    addBox(head, [0.07, 0.014, 0.014], [0, 0.058, 0.345], materials.glasses, "glasses-bridge");
+    addBox(head, [0.055, 0.008, 0.009], [0, 0.062, 0.311], materials.glasses, "glasses-bridge");
   }
 
   if (preset.earrings) {
@@ -182,14 +196,16 @@ function buildFace(head, materials, preset, rng) {
 }
 
 function addHair(head, materials, preset) {
+  // Keep the hairline well above the eyes. The previous deep hemispherical cap
+  // crossed the brows and could read as a dark mask from the isometric camera.
   const cap = addMesh(
     head,
-    new THREE.SphereGeometry(0.344, 12, 6, 0, TAU, 0, Math.PI * 0.56),
+    new THREE.SphereGeometry(0.344, 12, 6, 0, TAU, 0, Math.PI * 0.445),
     materials.hair,
     "hair-cap",
-    [0, 0.045, -0.012],
+    [0, 0.12, -0.018],
     null,
-    [1.02, 1.03, 1.02],
+    [1.025, 0.96, 1.02],
   );
   cap.renderOrder = 1;
 
@@ -200,15 +216,23 @@ function addHair(head, materials, preset) {
   } else if (preset.style === "beanie") {
     addMesh(
       head,
-      new THREE.SphereGeometry(0.355, 12, 6, 0, TAU, 0, Math.PI * 0.5),
+      new THREE.SphereGeometry(0.355, 12, 6, 0, TAU, 0, Math.PI * 0.43),
       materials.accent,
       "beanie-crown",
-      [0, 0.105, -0.01],
+      [0, 0.18, -0.015],
       null,
-      [1.04, 0.88, 1.04],
+      [1.04, 0.82, 1.04],
     );
-    addCylinder(head, [0.36, 0.36], 0.085, [0, 0.1, 0], materials.accentDark, "beanie-band", 12);
-    addSphere(head, 0.065, [0, 0.405, -0.01], materials.accent, "beanie-pom", null, 0);
+    addMesh(
+      head,
+      new THREE.TorusGeometry(0.315, 0.035, 6, 16),
+      materials.accentDark,
+      "beanie-band",
+      [0, 0.205, -0.015],
+      [Math.PI / 2, 0, 0],
+      [1.06, 1, 1],
+    );
+    addSphere(head, 0.06, [0, 0.417, -0.015], materials.accent, "beanie-pom", null, 0);
   } else if (preset.style === "curls") {
     const curls = [
       [-0.28, 0.18, 0], [-0.19, 0.3, -0.04], [0, 0.34, -0.05], [0.19, 0.3, -0.04], [0.28, 0.18, 0],
@@ -217,7 +241,7 @@ function addHair(head, materials, preset) {
     curls.forEach((position, index) => addSphere(head, 0.115, position, materials.hair, `curl-${index + 1}`, null, 0));
   } else if (preset.style === "bun") {
     addSphere(head, 0.15, [0.02, 0.35, -0.1], materials.hair, "hair-bun", [1, 1.08, 0.95], 0);
-    addCylinder(head, [0.045, 0.055], 0.37, [-0.13, 0.14, 0.27], materials.hair, "side-fringe", 6, [0, 0, -0.74]);
+    addSphere(head, 0.095, [-0.245, 0.105, 0.185], materials.hair, "side-fringe", [0.42, 1.22, 0.38], 0);
   } else if (preset.style === "tuft") {
     [-0.12, 0, 0.12].forEach((x, index) => {
       addMesh(
@@ -323,17 +347,18 @@ export function createCharacter3D(person = {}, seed = 0) {
   const materials = {
     skin: standard(skinColor),
     skinShade: standard(shifted(skinColor, 0, 0.01, -0.06)),
-    cheek: standard(shifted(skinColor, -0.01, 0.12, 0.06)),
-    hair: standard(hairColor),
+    cheek: standard(shifted(skinColor, -0.01, 0.075, 0.035)),
+    hair: standard(shifted(hairColor, 0, -0.025, 0.025)),
     outfit: standard(outfitColor),
     outfitDark: standard(shifted(outfitColor, 0, -0.03, -0.15)),
     accent: standard(accentColor),
     accentDark: standard(shifted(accentColor, 0, -0.04, -0.13)),
     trousers: standard(trouserColor),
     shoe: standard(shifted(hairColor, 0, -0.12, -0.11)),
-    eyeWhite: standard(0xf8f1dc),
-    eye: standard(0x202a27),
-    mouth: standard(0x743f3e),
+    eye: standard(0x3a312b),
+    eyeHighlight: standard(0xfff4d9, { roughness: 0.68 }),
+    brow: standard(shifted(hairColor, 0, -0.05, 0.075)),
+    mouth: standard(0x8a5550),
     glasses: standard(0x374542, { metalness: 0.16, roughness: 0.52 }),
     metal: standard(0xd6b55c, { metalness: 0.45, roughness: 0.42 }),
     pot: standard(shifted(outfitColor, 0.05, -0.05, 0.08)),

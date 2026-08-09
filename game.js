@@ -30,14 +30,14 @@ const CUSTOMERS = [
 ];
 
 const SLOT_DATA = [
-  { x: -4.55, y: 1.12, z: -4.08, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
-  { x: -2.95, y: 1.12, z: -4.08, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
-  { x: -4.55, y: 2.55, z: -4.08, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
-  { x: -2.95, y: 2.55, z: -4.08, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
+  { x: -4.65, y: 1.12, z: -4.32, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
+  { x: -2.85, y: 1.12, z: -4.32, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
+  { x: -4.65, y: 2.55, z: -4.32, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
+  { x: -2.85, y: 2.55, z: -4.32, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
   { x: 1.2, y: 0.06, z: -3.85, size: 0.9, zone: "window", zoneLabel: "sunny window" },
   { x: -1.3, y: 0.06, z: -2.85, size: 0.9, zone: "floor", zoneLabel: "open floor" },
   { x: -3.7, y: 0.06, z: 0.2, size: 0.9, zone: "floor", zoneLabel: "open floor" },
-  { x: 1.05, y: 1.4, z: 1.15, size: 0.72, zone: "counter", zoneLabel: "front counter" },
+  { x: 2.35, y: 1.4, z: 1.25, size: 0.72, zone: "counter", zoneLabel: "front counter" },
 ];
 
 function seeded(seed) {
@@ -183,10 +183,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const movers = [];
   const pointers = new Map();
   const staging = [
-    new THREE.Vector3(3.45, 1.08, -3.45),
-    new THREE.Vector3(4.35, 1.08, -3.45),
-    new THREE.Vector3(3.45, 1.08, -2.65),
-    new THREE.Vector3(4.35, 1.08, -2.65),
+    new THREE.Vector3(3.15, 1.12, -2.45),
+    new THREE.Vector3(3.95, 1.12, -2.45),
+    new THREE.Vector3(4.75, 1.12, -2.45),
+    new THREE.Vector3(3.95, 1.12, -3.35),
   ];
 
   const run = {
@@ -196,6 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
     selected: null,
     carried: null,
     crate: null,
+    crateAnimation: null,
     customer: null,
     customerTween: null,
     moth: null,
@@ -450,7 +451,7 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(wateringCan);
 
     makeSlots();
-    makeCrates(woodMat, darkWood);
+    makeCrates();
     makeGrowLamp(brass);
     makeRainBarrel(woodMat, brass);
     makeSelectionRing();
@@ -497,25 +498,78 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function makeCrates(woodMat, darkWood) {
+  function makeCrates() {
     const root = new THREE.Group();
     root.position.set(4.55, 0.03, 3.15);
+    const cardboard = material(0xc99863);
+    const cardboardEdge = material(0x8c5f3c);
+    const packingPaper = material(0xe7c985);
+
     for (let layer = 0; layer < 3; layer += 1) {
-      const crate = new THREE.Group();
-      crate.name = `crate-${layer}`;
-      crate.position.set((layer % 2) * 0.18, layer * 0.65, -layer * 0.08);
-      box(crate, [1.1, 0.58, 0.85], [0, 0.3, 0], woodMat);
-      box(crate, [1.18, 0.11, 0.93], [0, 0.1, 0], darkWood);
-      box(crate, [1.18, 0.11, 0.93], [0, 0.5, 0], darkWood);
-      box(crate, [0.12, 0.56, 0.93], [-0.43, 0.3, 0], darkWood);
-      box(crate, [0.12, 0.56, 0.93], [0.43, 0.3, 0], darkWood);
-      root.add(crate);
+      const carton = new THREE.Group();
+      carton.name = `carton-${layer}`;
+      carton.position.set((layer % 2) * 0.18, layer * 0.65, -layer * 0.08);
+
+      const body = new THREE.Group();
+      box(body, [1.12, 0.08, 0.88], [0, 0.04, 0], cardboardEdge);
+      box(body, [1.12, 0.54, 0.08], [0, 0.31, 0.4], cardboard);
+      box(body, [1.12, 0.54, 0.08], [0, 0.31, -0.4], cardboard);
+      box(body, [0.08, 0.54, 0.72], [-0.52, 0.31, 0], cardboard);
+      box(body, [0.08, 0.54, 0.72], [0.52, 0.31, 0], cardboard);
+      box(body, [0.16, 0.56, 0.09], [0, 0.3, 0.405], cardboardEdge);
+      carton.add(body);
+
+      const packing = new THREE.Group();
+      for (let scrap = 0; scrap < 7; scrap += 1) {
+        const angle = (scrap / 7) * Math.PI * 2;
+        box(
+          packing,
+          [0.26 + (scrap % 2) * 0.08, 0.035, 0.07],
+          [Math.cos(angle) * 0.29, 0.54 + (scrap % 3) * 0.018, Math.sin(angle) * 0.22],
+          packingPaper,
+          [0, angle + scrap * 0.22, (scrap % 2 ? -1 : 1) * 0.16],
+        );
+      }
+      packing.visible = false;
+      carton.add(packing);
+
+      const flaps = [];
+      const addFlap = (position, size, leafPosition, axis, openRotation) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(...position);
+        box(pivot, size, leafPosition, cardboard);
+        pivot.userData.axis = axis;
+        pivot.userData.openRotation = openRotation;
+        carton.add(pivot);
+        flaps.push(pivot);
+      };
+      addFlap([0, 0.58, 0.44], [1.1, 0.045, 0.43], [0, 0, -0.215], "x", 1.34);
+      addFlap([0, 0.58, -0.44], [1.1, 0.045, 0.43], [0, 0, 0.215], "x", -1.34);
+      addFlap([-0.56, 0.58, 0], [0.56, 0.05, 0.82], [0.28, 0, 0], "z", 1.24);
+      addFlap([0.56, 0.58, 0], [0.56, 0.05, 0.82], [-0.28, 0, 0], "z", -1.24);
+
+      carton.userData.restPosition = carton.position.clone();
+      carton.userData.flaps = flaps;
+      carton.userData.packing = packing;
+      carton.userData.opened = false;
+      root.add(carton);
     }
     root.userData.entity = { kind: "crate", id: "deliveries" };
     root.userData.ringY = 0;
     world.add(root);
     interactive.push(root);
     run.crate = root;
+  }
+
+  function resetCarton(carton) {
+    carton.position.copy(carton.userData.restPosition);
+    carton.rotation.set(0, 0, 0);
+    carton.scale.set(1, 1, 1);
+    carton.userData.flaps?.forEach((flap) => {
+      flap.rotation[flap.userData.axis] = 0;
+    });
+    if (carton.userData.packing) carton.userData.packing.visible = false;
+    carton.userData.opened = false;
   }
 
   function makeGrowLamp(brass) {
@@ -627,8 +681,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateCrates() {
     if (!run.crate) return;
-    run.crate.visible = state.crates > 0;
-    run.crate.children.forEach((child, index) => { child.visible = index < state.crates; });
+    const activeCarton = run.crateAnimation?.carton || null;
+    run.crate.visible = state.crates > 0 || Boolean(activeCarton);
+    run.crate.children.forEach((carton, index) => {
+      const shouldShow = index < state.crates || carton === activeCarton;
+      carton.visible = shouldShow;
+      if (shouldShow && carton !== activeCarton && carton.userData.opened) resetCarton(carton);
+    });
   }
 
   function updateSlotGlow() {
@@ -919,25 +978,127 @@ document.addEventListener("DOMContentLoaded", () => {
       toast("Only packing straw. It smells oddly optimistic.");
       return;
     }
+    const carton = run.crate?.children[state.crates - 1];
     const speciesName = state.crateQueue.shift();
     const plant = plantRecord(speciesName, state.day * 100 + state.crates * 17);
     if (state.crates === 3) plant.hydration = 36 + (state.day % 7);
     state.inventory.push(plant);
     state.crates -= 1;
     const object = createPlant(plant);
-    object.position.copy(staging[state.inventory.filter((item) => !Number.isInteger(item.slot)).length - 1] || staging[0]);
+    const looseCount = state.inventory.filter((item) => !Number.isInteger(item.slot)).length;
+    const target = staging[(looseCount - 1) % staging.length];
+    object.position.copy(target);
     object.scale.setScalar(0.05);
+    object.visible = false;
     world.add(object);
     plantObjects.set(plant.id, object);
-    movers.push({ object, from: object.position.clone(), to: object.position.clone(), startScale: 0.05, endScale: 0.78, time: 0, duration: 0.55, arc: 0.25 });
-    burst(object.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0xe9c47c, 16);
-    run.selected = { kind: "plant", id: plant.id, object };
-    run.carried = plant.id;
+    const origin = carton
+      ? world.worldToLocal(carton.getWorldPosition(new THREE.Vector3()))
+      : target.clone();
+    run.busy = true;
+    run.selected = null;
+    run.carried = null;
+    run.crateAnimation = {
+      carton,
+      object,
+      plant,
+      origin,
+      target: target.clone(),
+      time: 0,
+      packingBurst: false,
+    };
+    if (carton) carton.userData.opened = true;
+    document.body.dataset.selection = "none";
     updateCrates();
     updateSelectionRing();
     updateSlotGlow();
     save();
     sound("crate");
+    updateUi();
+  }
+
+  function updateCartonOpening(dt) {
+    const opening = run.crateAnimation;
+    if (!opening) return;
+    const { carton, object, origin, target } = opening;
+    opening.time += dt;
+
+    if (reduceMotion || !carton) {
+      if (carton) {
+        carton.userData.flaps?.forEach((flap) => {
+          flap.rotation[flap.userData.axis] = flap.userData.openRotation;
+        });
+        if (carton.userData.packing) carton.userData.packing.visible = true;
+      }
+      if (!opening.packingBurst) {
+        opening.packingBurst = true;
+        burst(origin.clone().add(new THREE.Vector3(0, 0.7, 0)), 0xe9c47c, 8);
+      }
+      object.visible = true;
+      object.position.copy(target);
+      object.scale.setScalar(0.78);
+      finishCartonOpening(opening);
+      return;
+    }
+
+    const settleProgress = clamp(opening.time / 0.26, 0, 1);
+    const settle = Math.sin(settleProgress * Math.PI);
+    carton.position.copy(carton.userData.restPosition);
+    carton.position.y -= settle * 0.065;
+    carton.scale.set(1 + settle * 0.025, 1 - settle * 0.055, 1 + settle * 0.025);
+
+    const flapProgress = clamp((opening.time - 0.14) / 0.5, 0, 1);
+    const flapEase = flapProgress * flapProgress * (3 - 2 * flapProgress);
+    carton.userData.flaps?.forEach((flap) => {
+      flap.rotation[flap.userData.axis] = flap.userData.openRotation * flapEase;
+    });
+
+    if (opening.time >= 0.68 && !opening.packingBurst) {
+      opening.packingBurst = true;
+      if (carton.userData.packing) carton.userData.packing.visible = true;
+      burst(origin.clone().add(new THREE.Vector3(0, 0.72, 0)), 0xe9c47c, 18);
+    }
+
+    const revealProgress = clamp((opening.time - 0.7) / 0.35, 0, 1);
+    if (revealProgress > 0) {
+      const revealEase = 1 - (1 - revealProgress) ** 3;
+      const revealStart = origin.clone().add(new THREE.Vector3(0, 0.4, 0));
+      const revealTop = origin.clone().add(new THREE.Vector3(0, 1.0, 0));
+      object.visible = true;
+      object.position.lerpVectors(revealStart, revealTop, revealEase);
+      object.scale.setScalar(lerp(0.05, 0.46, revealEase));
+    }
+
+    const transferProgress = clamp((opening.time - 1.05) / 0.95, 0, 1);
+    if (transferProgress > 0) {
+      const transferEase = transferProgress * transferProgress * (3 - 2 * transferProgress);
+      const revealTop = origin.clone().add(new THREE.Vector3(0, 1.0, 0));
+      object.position.lerpVectors(revealTop, target, transferEase);
+      object.position.y += Math.sin(transferProgress * Math.PI) * 0.42;
+      object.scale.setScalar(lerp(0.46, 0.78, transferEase));
+    }
+
+    if (opening.time >= 2) finishCartonOpening(opening);
+  }
+
+  function finishCartonOpening(opening) {
+    if (run.crateAnimation !== opening) return;
+    const { carton, object, plant, target } = opening;
+    if (carton) {
+      carton.position.copy(carton.userData.restPosition);
+      carton.scale.set(1, 1, 1);
+    }
+    object.visible = true;
+    object.position.copy(target);
+    object.scale.setScalar(0.78);
+    run.crateAnimation = null;
+    run.busy = false;
+    run.selected = { kind: "plant", id: plant.id, object };
+    run.carried = plant.id;
+    document.body.dataset.selection = "plant";
+    updateCrates();
+    updateSelectionRing();
+    updateSlotGlow();
     toast(plant.hydration < 42
       ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
       : `${plant.species}! A little rumpled, fundamentally promising.`);
@@ -1268,7 +1429,7 @@ document.addEventListener("DOMContentLoaded", () => {
     spawnCustomer(true);
     save();
     sound("open");
-    toast(state.upgrades.growLamp ? "Morning. The grow lamp handled the misting shift." : "Morning delivery! Three mysterious crates, naturally.");
+    toast(state.upgrades.growLamp ? "Morning. The grow lamp handled the misting shift." : "Morning delivery! Three mysterious cartons, naturally.");
     updateUi();
   }
 
@@ -1302,12 +1463,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let disabled = true;
     let title = state.crates ? "Rescue the delivery" : person ? `A plant for ${person.name}` : "Tidy the leaves";
     let copy = state.crates
-      ? `${state.crates} crate${state.crates === 1 ? "" : "s"} arrived with suspicious air holes. Tap one to unpack it.`
+      ? `${state.crates} carton${state.crates === 1 ? "" : "s"} arrived with suspicious air holes. Open one to meet its plant.`
       : person ? `Find a ${person.need} plant, care for it, then make the match.` : "The shop is quiet for a minute.";
     if (state.displayGoal) copy += ` ${goalSummary()}.`;
     const selected = run.selected;
     if (selected?.kind === "crate") {
-      action = state.crates ? `Unpack crate · ${state.crates} left` : "All crates unpacked";
+      action = state.crates ? `Open carton · ${state.crates} left` : "All cartons opened";
       disabled = state.crates <= 0;
     } else if (selected?.kind === "plant") {
       const plant = state.inventory.find((item) => item.id === selected.id);
@@ -1635,6 +1796,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
     if (!reduceMotion && run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
+    updateCartonOpening(dt);
     updateMovers(dt);
     updateEffects(dt);
     updateCustomer(dt, time);
