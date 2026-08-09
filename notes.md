@@ -29,3 +29,11 @@
 - Improved accessibility with labelled dialogs, modal focus management, inert background controls, reduced-motion support, keyboard selection, live status copy, and visible care completion states.
 - Validation: `node --check game.js`, `git diff --check`, local HTTP asset checks, real browser title/start/gameplay screenshots, keyboard/modal checks, and an end-to-end three-sale day run. No browser console errors or warnings in the tested build.
 - Next: add installable mobile metadata, a concise README, then run final static-hosting and performance checks.
+
+## 2026-08-09 — Shipping pass
+
+- Added `README.md` with the game loop, desktop/touch/keyboard controls, local preview command, persistence behavior, and dependency/asset notes.
+- Added a lightweight original SVG plant-pot icon and `manifest.webmanifest` for standalone mobile presentation, plus matching browser theme metadata.
+- Vendored runtime and generated texture payload is about 2 MB before HTTP compression; the scene caps device pixel ratio on smaller screens and uses compact low-poly meshes.
+- Added `.gitignore` entries for local work, generated output, and macOS metadata without hiding any runtime file.
+- Revalidated the static entry point and every referenced local asset over HTTP, checked the module syntax and whitespace, and exercised the responsive UI at desktop plus four mobile viewport shapes.
