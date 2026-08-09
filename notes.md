@@ -119,3 +119,9 @@
 - Expanded the procedural 3D plant library with nine genuinely different silhouettes: String of Pearls, Coinleaf Pilea, Rubber Plant, Spoonflower Lily, Parlor Palm, Zanzibar Gem, Elephant Ear, Polka Dot Begonia, and Tiny Ficus.
 - Modeled the new forms as hanging bead strands, round peltate leaves, a woody glossy tree, white spathes, feather palms, paired ZZ leaflets, shield leaves, spotted cane growth, and a pruned miniature canopy rather than recoloring the original seven plants.
 - Connected every new foliage system to the existing hydration-droop pivots and reused the original botanical texture maps. Programmatic construction checks found nonzero animated foliage on all nine models, exact ground-level pot bases, and pre-slot heights from 0.77 to 2.35 shop units.
+
+## 2026-08-09 — Neighborhood Week v1, content catalog
+
+- Raised the content schema to save version 5 and expanded the catalog to sixteen species and twelve stable customer identities. New species are assigned across five unlock weeks instead of appearing as an unfiltered wall on day one.
+- Added declarative Quick, Fair, and Boutique price bands; a Monday–Friday calendar; ten weekly objective types; customer archetypes, personal budget ranges, and returning dialogue; and exactly forty handcrafted brief templates.
+- Brief templates combine readable framing with a viable Must have trait, an optional distinct Would love trait, and a position inside each neighbor’s budget range. Validation confirms that every referenced trait exists in the species catalog and all customer, species, objective, and brief IDs are unique.
