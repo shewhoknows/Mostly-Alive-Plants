@@ -32,6 +32,7 @@ Progress, sound preference, living plant condition, and upgrades are stored loca
 
 - Build-free HTML, CSS, and JavaScript ES modules.
 - Three.js `0.179.1` is vendored under `vendor/` with its MIT license.
-- Three botanical shop textures and six original customer cutouts were generated with OpenAI ImageGen using `gpt-image-2`-oriented production prompts, then optimized for web delivery.
+- Three shop textures and four botanical foliage materials were generated with OpenAI ImageGen using `gpt-image-2` production prompts, then optimized for web delivery.
+- Customers are proportional, articulated low-poly 3D characters with walk and carry poses. Each of the seven plant varieties has a species-specific 3D silhouette and foliage construction.
 - No copied models, characters, names, layouts, or artwork from the reference game are included.
-- See `notes.md` for the chronological build log and asset prompt summary.
+- See `notes.md` for the chronological build log and asset prompt summary, and `GAMEPLAY_PLAN.md` for the staged management-game roadmap.

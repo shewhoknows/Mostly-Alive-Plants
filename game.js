@@ -1,4 +1,6 @@
 import * as THREE from "./vendor/three.module.min.js";
+import { createCharacter3D, animateCharacter3D } from "./character-models.js";
+import { createDistinctPlant3D } from "./plant-models.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
@@ -19,12 +21,12 @@ const SPECIES = [
 ];
 
 const CUSTOMERS = [
-  { name: "Mina", color: 0xe39a7b, asset: "assets/characters/mina.png", line: "My windowsill needs a little courage." },
-  { name: "Basil", color: 0x7189a6, asset: "assets/characters/basil.png", line: "I promised myself I could keep one alive." },
-  { name: "Jo", color: 0xd3a64b, asset: "assets/characters/jo.png", line: "My bookshelf is looking emotionally vacant." },
-  { name: "Nori", color: 0x8f74a8, asset: "assets/characters/nori.png", line: "I want a roommate who enjoys silence." },
-  { name: "Pip", color: 0x6d9a78, asset: "assets/characters/pip.png", line: "Something peculiar, but polite, please." },
-  { name: "Sol", color: 0xc9785e, asset: "assets/characters/sol.png", line: "The sunniest corner of my flat is lonely." },
+  { name: "Mina", color: 0xe39a7b, line: "My windowsill needs a little courage." },
+  { name: "Basil", color: 0x7189a6, line: "I promised myself I could keep one alive." },
+  { name: "Jo", color: 0xd3a64b, line: "My bookshelf is looking emotionally vacant." },
+  { name: "Nori", color: 0x8f74a8, line: "I want a roommate who enjoys silence." },
+  { name: "Pip", color: 0x6d9a78, line: "Something peculiar, but polite, please." },
+  { name: "Sol", color: 0xc9785e, line: "The sunniest corner of my flat is lonely." },
 ];
 
 const SLOT_DATA = [
@@ -297,8 +299,11 @@ document.addEventListener("DOMContentLoaded", () => {
       floor: "assets/textures/terracotta-floor.png",
       wood: "assets/textures/painted-oak.png",
       wall: "assets/textures/botanical-plaster.png",
+      leafFern: "assets/textures/leaf-fern.png",
+      leafVelvet: "assets/textures/leaf-velvet.png",
+      leafPinstripe: "assets/textures/leaf-pinstripe.png",
+      leafWaxy: "assets/textures/leaf-waxy.png",
     };
-    CUSTOMERS.forEach((customer) => { files[`customer-${customer.name.toLowerCase()}`] = customer.asset; });
     const loader = new THREE.TextureLoader();
     const textures = {};
     const total = Object.keys(files).length;
@@ -308,7 +313,8 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         textures[key] = await loader.loadAsync(url);
         textures[key].colorSpace = THREE.SRGBColorSpace;
-        textures[key].wrapS = textures[key].wrapT = key.startsWith("customer-") ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+        const repeats = key === "floor" || key === "wood" || key === "wall";
+        textures[key].wrapS = textures[key].wrapT = repeats ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
       } catch {
         textures[key] = null;
       }
@@ -568,85 +574,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function createPlant(plant) {
     const spec = speciesOf(plant);
-    const root = new THREE.Group();
-    const green = new THREE.Color(spec.color).offsetHSL(plant.colorShift || 0, 0, 0);
-    const leafMat = material(green, { roughness: 0.86 });
-    const leafLight = material(green.clone().offsetHSL(0.02, -0.05, 0.12));
-    const stemMat = material(0x456b3f);
-    const potColors = [0xc77d5d, 0xd19a73, 0x9b705d, 0x729084];
-    const potColor = potColors[Math.abs(hash(plant.id)) % potColors.length];
-    cylinder(root, 0.39, 0.31, 0.57, [0, 0.31, 0], material(potColor), 9);
-    cylinder(root, 0.43, 0.4, 0.12, [0, 0.57, 0], material(new THREE.Color(potColor).offsetHSL(0, 0, 0.06)), 9);
-    cylinder(root, 0.34, 0.34, 0.04, [0, 0.64, 0], material(0x4b382b), 12);
-    const leaves = [];
-
-    const leaf = (x, y, z, sx, sy, sz, rz = 0, mat = leafMat) => {
-      const node = new THREE.Mesh(new THREE.SphereGeometry(0.34, 7, 5), mat);
-      node.position.set(x, y, z);
-      node.scale.set(sx, sy, sz);
-      node.rotation.z = rz;
-      node.castShadow = true;
-      node.userData.baseRotation = rz;
-      root.add(node);
-      leaves.push(node);
-      return node;
-    };
-
-    if (spec.shape === "spear") {
-      for (let i = 0; i < 8; i += 1) {
-        const angle = (i / 8) * Math.PI * 2;
-        const node = new THREE.Mesh(new THREE.ConeGeometry(0.13, 1.45 + (i % 3) * 0.18, 5), i % 2 ? leafLight : leafMat);
-        node.position.set(Math.cos(angle) * 0.2, 1.25 + (i % 3) * 0.08, Math.sin(angle) * 0.2);
-        node.rotation.z = Math.cos(angle) * 0.12;
-        node.userData.baseRotation = node.rotation.z;
-        node.castShadow = true;
-        root.add(node);
-        leaves.push(node);
-      }
-    } else if (spec.shape === "succulent") {
-      for (let layer = 0; layer < 3; layer += 1) {
-        const count = 8 - layer * 2;
-        for (let i = 0; i < count; i += 1) {
-          const angle = (i / count) * Math.PI * 2 + layer;
-          const node = leaf(Math.cos(angle) * (0.28 - layer * 0.07), 0.78 + layer * 0.23, Math.sin(angle) * (0.28 - layer * 0.07), 0.38, 0.9, 0.32, angle + Math.PI / 2, layer % 2 ? leafLight : leafMat);
-          node.rotation.y = -angle;
-        }
-      }
-    } else if (spec.shape === "cactus") {
-      cylinder(root, 0.23, 0.28, 1.38, [0, 1.28, 0], leafMat, 9);
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(0.24, 9, 6), leafMat);
-      crown.position.y = 1.96;
-      crown.castShadow = true;
-      root.add(crown);
-      for (let i = 0; i < 7; i += 1) leaf(Math.cos(i) * 0.17, 2.15, Math.sin(i) * 0.17, 0.28, 0.35, 0.28, 0, material(i % 2 ? 0xf2b75d : 0xe47d7a));
-    } else {
-      const count = spec.shape === "fern" ? 11 : spec.shape === "broad" ? 7 : 8;
-      for (let i = 0; i < count; i += 1) {
-        const angle = (i / count) * Math.PI * 2 + 0.4;
-        const radius = spec.shape === "fan" ? 0.28 : 0.38;
-        const height = 1.08 + (i % 3) * 0.24;
-        const stem = cylinder(root, 0.025, 0.035, height - 0.55, [Math.cos(angle) * radius * 0.35, (height + 0.55) / 2, Math.sin(angle) * radius * 0.35], stemMat, 5);
-        stem.rotation.z = Math.cos(angle) * 0.24;
-        const wide = spec.shape === "broad" ? 1.4 : spec.shape === "fern" ? 0.75 : 1;
-        const node = leaf(Math.cos(angle) * radius, height, Math.sin(angle) * radius, 0.75 * wide, 1.1, 0.28, -Math.cos(angle) * 0.45, i % 2 ? leafLight : leafMat);
-        node.rotation.y = -angle;
-        if (spec.shape === "vine" && i > 4) {
-          node.position.y -= (i - 4) * 0.18;
-          node.position.x += Math.cos(angle) * (i - 4) * 0.12;
-        }
-      }
-    }
-    leaves.forEach((node, index) => {
-      node.userData.basePosition = node.position.clone();
-      node.userData.baseEuler = node.rotation.clone();
-      node.userData.baseScale = node.scale.clone();
-      node.userData.radialAngle = Math.abs(node.position.x) + Math.abs(node.position.z) > 0.02
-        ? Math.atan2(node.position.z, node.position.x)
-        : (index / Math.max(leaves.length, 1)) * Math.PI * 2;
-    });
+    const root = createDistinctPlant3D(plant, spec, run.textures);
     root.userData.entity = { kind: "plant", id: plant.id };
     root.userData.plantId = plant.id;
-    root.userData.leaves = leaves;
     root.userData.phase = Math.abs(hash(plant.id)) % 100;
     root.userData.ringY = 0;
     root.userData.droop = clamp((48 - plant.hydration) / 40, 0, 1);
@@ -882,35 +812,28 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function createCustomer(person) {
-    const root = new THREE.Group();
-    const texture = run.textures[`customer-${person.name.toLowerCase()}`];
-    const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.58, 24),
-      new THREE.MeshBasicMaterial({ color: 0x27372c, transparent: true, opacity: 0.2, depthWrite: false }),
-    );
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.scale.set(1, 0.42, 1);
-    shadow.position.y = 0.018;
-    root.add(shadow);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: texture,
-      color: texture ? 0xffffff : person.color,
-      transparent: true,
-      alphaTest: texture ? 0.055 : 0,
-      depthWrite: true,
-      toneMapped: false,
-    }));
-    sprite.center.set(0.5, 0);
-    sprite.position.y = 0.025;
-    sprite.scale.set(1.58, 2.82, 1);
-    sprite.renderOrder = 2;
-    root.add(sprite);
+    const root = createCharacter3D(person, state.day * 101 + state.customerIndex * 17);
     root.userData.entity = { kind: "customer", id: state.customerIndex };
-    root.userData.phase = Math.random() * 6;
     root.userData.ringY = 0;
-    root.userData.sprite = sprite;
     interactive.push(root);
     return root;
+  }
+
+  function stageCustomerCarry(plantObject) {
+    const carry = run.customer?.userData?.rig?.carriedPlant;
+    if (!carry || !plantObject) return;
+    const model = plantObject.clone(true);
+    model.traverse((child) => {
+      if (!child.userData) return;
+      delete child.userData.entity;
+      delete child.userData.plantId;
+    });
+    const modelTop = Math.max(plantObject.userData.modelTop || 1.4, 0.8);
+    model.position.set(0, 0, 0);
+    model.rotation.set(0, 0.24, 0);
+    model.scale.setScalar(0.78 / modelTop);
+    carry.clear();
+    carry.add(model);
   }
 
   function spawnCustomer(enter = true) {
@@ -922,12 +845,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const object = createCustomer(person);
-    object.position.set(enter && !reduceMotion ? 6.2 : 0.15, 0, 3.32);
-    object.rotation.y = -0.08;
+    object.position.set(enter && !reduceMotion ? 6.2 : 0.15, 0, enter && !reduceMotion ? 4.45 : 3.32);
+    object.rotation.y = enter && !reduceMotion ? -1.75 : 0.68;
     world.add(object);
     run.customer = object;
     run.customerTween = enter && !reduceMotion ? { mode: "enter", time: 0 } : null;
-    run.busy = false;
+    run.busy = Boolean(run.customerTween);
+    animateCharacter3D(object, {
+      time: clock.elapsedTime,
+      walking: Boolean(run.customerTween),
+      carrying: false,
+      reduceMotion,
+    });
     updateUi();
   }
 
@@ -1143,6 +1072,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const object = plantObjects.get(plant.id);
     const target = run.customer?.position.clone().add(new THREE.Vector3(0, 1.0, 0)) || new THREE.Vector3(0, 1, 3);
     if (object) {
+      stageCustomerCarry(object);
       const index = interactive.indexOf(object);
       if (index >= 0) interactive.splice(index, 1);
       movers.push({ object, from: object.position.clone(), to: target, startScale: object.scale.x, endScale: 0.08, time: 0, duration: 0.62, arc: 1.2, remove: true });
@@ -1154,7 +1084,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (run.selectionRing) run.selectionRing.visible = false;
     document.body.dataset.selection = "none";
     if (run.customer) run.customer.userData.entity = null;
-    run.customerTween = { mode: "exit", time: 0 };
+    run.customerTween = { mode: "exit", time: 0, delay: reduceMotion ? 0 : 0.58 };
     run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
     sound("sale");
@@ -1162,7 +1092,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
-    const delay = reduceMotion ? 180 : 850;
+    const delay = reduceMotion ? 180 : 2850;
     setTimeout(() => {
       if (state.customerIndex >= 3) showReport();
       else spawnCustomer(true);
@@ -1355,9 +1285,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (ui.customerName) ui.customerName.textContent = person.name;
       if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}” ${person.need} required · ${person.bonusTrait} + ${carePastTense(person.careWish)} + thriving bonus.`;
       if (ui.customerAvatar) {
-        const profile = CUSTOMERS.find((customer) => customer.name === person.name);
-        ui.customerAvatar.style.backgroundImage = profile?.asset ? `url("${profile.asset}")` : "";
+        ui.customerAvatar.style.backgroundImage = "";
         ui.customerAvatar.style.setProperty("--customer-color", `#${person.color.toString(16).padStart(6, "0")}`);
+        const initial = ui.customerAvatar.querySelector("span");
+        if (initial) initial.textContent = person.name.slice(0, 1);
       }
     }
 
@@ -1697,16 +1628,10 @@ document.addEventListener("DOMContentLoaded", () => {
         leaf.scale.y *= 1 - droop * 0.18;
       });
     });
-    if (!reduceMotion) {
-      if (run.customer && !run.customerTween) {
-        run.customer.position.y = Math.sin(time * 1.6 + run.customer.userData.phase) * 0.025;
-        if (run.customer.userData.sprite) run.customer.userData.sprite.material.rotation = Math.sin(time * 1.3 + run.customer.userData.phase) * 0.006;
-      }
-      if (run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
-    }
+    if (!reduceMotion && run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
     updateMovers(dt);
     updateEffects(dt);
-    updateCustomer(dt);
+    updateCustomer(dt, time);
     updateMoth(dt);
     updateSelectionRing();
     renderer.render(scene, camera);
@@ -1803,21 +1728,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function updateCustomer(dt) {
-    if (!run.customer || !run.customerTween) return;
+  function updateCustomer(dt, time) {
+    if (!run.customer) return;
+    if (!run.customerTween) {
+      animateCharacter3D(run.customer, { time, walking: false, carrying: false, reduceMotion });
+      return;
+    }
     const tween = run.customerTween;
     tween.time += dt;
-    const duration = tween.mode === "enter" ? 0.75 : 0.65;
-    const t = clamp(tween.time / duration, 0, 1);
-    if (tween.mode === "enter") run.customer.position.x = lerp(6.2, 0.15, 1 - (1 - t) ** 3);
-    else run.customer.position.x = lerp(0.15, 6.5, t * t);
-    if (run.customer.userData.sprite) run.customer.userData.sprite.material.rotation = Math.sin(t * Math.PI * 7) * 0.018;
+    const delay = tween.delay || 0;
+    if (tween.time < delay) {
+      animateCharacter3D(run.customer, { time, walking: false, carrying: false, reduceMotion });
+      return;
+    }
+    const duration = reduceMotion ? 0.01 : tween.mode === "enter" ? 2.15 : 2.05;
+    const t = clamp((tween.time - delay) / duration, 0, 1);
+    if (tween.mode === "enter") {
+      const travel = 1 - (1 - t) ** 2.15;
+      const turn = clamp((t - 0.7) / 0.3, 0, 1);
+      run.customer.position.x = lerp(6.2, 0.15, travel);
+      run.customer.position.z = lerp(4.45, 3.32, travel);
+      run.customer.rotation.y = lerp(-1.75, 0.68, turn * turn * (3 - 2 * turn));
+      animateCharacter3D(run.customer, {
+        time,
+        walking: t < 0.94,
+        carrying: false,
+        reduceMotion,
+        walkSpeed: 0.92,
+      });
+    } else {
+      const turn = clamp(t / 0.18, 0, 1);
+      const move = clamp((t - 0.09) / 0.91, 0, 1);
+      const travel = move * move * (3 - 2 * move);
+      run.customer.rotation.y = lerp(0.68, 1.39, turn * turn * (3 - 2 * turn));
+      run.customer.position.x = lerp(0.15, 6.5, travel);
+      run.customer.position.z = lerp(3.32, 4.45, travel);
+      animateCharacter3D(run.customer, {
+        time,
+        walking: t > 0.08 && t < 0.98,
+        carrying: true,
+        reduceMotion,
+        walkSpeed: 0.98,
+      });
+    }
     if (t >= 1) {
       if (tween.mode === "exit") {
         unregister(run.customer);
         run.customer = null;
+      } else {
+        run.busy = false;
       }
       run.customerTween = null;
+      updateUi();
     }
   }
 
