@@ -37,3 +37,18 @@
 - Vendored runtime and generated texture payload is about 2 MB before HTTP compression; the scene caps device pixel ratio on smaller screens and uses compact low-poly meshes.
 - Added `.gitignore` entries for local work, generated output, and macOS metadata without hiding any runtime file.
 - Revalidated the static entry point and every referenced local asset over HTTP, checked the module syntax and whitespace, and exercised the responsive UI at desktop plus four mobile viewport shapes.
+
+## 2026-08-09 — Living shop and customer cast
+
+- Generated six original full-body customer renders with the ImageGen workflow: Mina, Basil, Jo, Nori, Pip, and Sol. Each uses believable adult proportions, a warm tactile 3D finish, a distinct outfit/prop silhouette, and no borrowed reference-game art.
+- Processed the flat-magenta generations into 512×768 transparent RGBA sprites with the skill’s chroma-key helper, soft matte, despill, and edge contraction. Corrected Nori’s lavender coat alpha separately and validated transparent corners and edge coverage for all six. The full cast adds about 1.37 MB.
+- Replaced the procedural mannequin customers with camera-facing cutouts, contact shadows, matching HUD portraits, a slightly smaller real-world scene scale, unique daily casting, and concise mobile-friendly customer briefs.
+- Fixed tall plants intersecting the upper shelf by measuring each generated plant model and dynamically fitting lower-shelf scale to its actual ceiling clearance. Automatic placement now prefers a roomier slot for especially tall plants.
+- Added persistent living soil condition. Hydration falls only during visible, unpaused play, varies by species, never kills a plant, and drives a smooth leaf-droop pose. Every day’s first delivery is visibly thirsty so the recovery mechanic is discoverable; watering a drooping plant perks it up and awards a small rescue bonus.
+- Split care feedback into genuinely different animations: an arcing stream of elongated blue droplets with a soil ripple for watering, a slow translucent canopy cloud for misting, and the existing leafy burst for pruning.
+- Expanded the customer puzzle with one required trait plus optional second-trait, requested-care, and thriving bonuses. Perfect matches pay more, and three perfect briefs in a day award an extra Community Bloom bonus.
+- Added procedural daily display vignettes tied to shelf, floor, window, or counter zones. Matching carried plants highlight the correct spot; completing the vignette pays coins and Bloom. Slot rings now include invisible full-disc touch targets so their decorative hollow centers remain easy to tap.
+- Added a purchasable, visible rain-barrel upgrade that slows soil drying by 35%, alongside the existing grow lamp. Closing reports now include perfect briefs, thirst rescues, and display completion.
+- Migrated existing local saves in place to save version 3, preserving inventory and upgrades while filling in hydration, new customer preferences, and new counters.
+- Validation so far: syntax and whitespace checks; transparent PNG format/alpha checks; live browser tests of fresh and migrated saves; desktop and portrait rendering; touch placement; water, mist, recovery, perfect-match, and display-goal flows; no browser-console errors.
+- Final responsive review widened the stacked portrait layout through 600px, separated the care and action rows at intermediate phone widths, and restored mobile access to both upgrades with a compact horizontal utility row.

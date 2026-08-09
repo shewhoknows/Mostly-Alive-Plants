@@ -430,12 +430,21 @@ h1 span {
   display: grid;
   width: 3rem;
   height: 3rem;
+  overflow: hidden;
   border: 1px solid var(--ink);
   border-radius: 50%;
   place-items: center;
   color: var(--paper);
-  background: var(--plum);
+  background-color: var(--customer-color, var(--plum));
+  background-image: none;
+  background-repeat: no-repeat;
+  background-position: center 7%;
+  background-size: 205% auto;
   box-shadow: inset 0 -0.35rem 0 rgba(0, 0, 0, 0.12);
+}
+
+.customer-avatar span {
+  display: none;
 }
 
 .customer-card p {
@@ -920,7 +929,7 @@ noscript {
   }
 }
 
-@media (max-width: 30rem) and (orientation: portrait) {
+@media (max-width: 37.5rem) and (orientation: portrait) {
   .task-card {
     right: var(--safe-right);
     width: auto;
@@ -936,12 +945,9 @@ noscript {
 
   .utility-buttons {
     right: auto;
-    bottom: calc(var(--safe-bottom) + 9.2rem);
+    bottom: calc(var(--safe-bottom) + 9.7rem);
     left: var(--safe-left);
-  }
-
-  .utility-buttons #upgrade-button {
-    display: none;
+    display: flex;
   }
 
   .title-notes {

@@ -16,22 +16,22 @@ Then visit `http://127.0.0.1:4173/`.
 
 - Mouse/touch: tap an object, use the large contextual action, drag to pan, and wheel/pinch to zoom.
 - Keyboard: `Q` cycles shop objects, `E` acts, `1`/`2`/`3` use care tools, and arrow keys turn the view.
-- On small screens the interface reflows for portrait and short landscape play; every required action is touch-accessible.
 
 ## The day loop
 
 1. Unpack three mystery plants.
-2. Water, mist, or prune them at the care bench.
-3. Place them on an open display.
-4. Read each customer’s request and offer a matching plant.
-5. Earn coins and Community Bloom, encounter the moon moth, and improve the shop.
+2. Read the soil condition: thirsty plants visibly droop and perk back up after watering.
+3. Water the soil, mist the canopy, or prune at the care bench—each action has its own effect.
+4. Arrange deliveries to complete a small daily display vignette.
+5. Meet each customer’s required trait, then chase optional trait, care, and thriving bonuses for a perfect match.
+6. Earn coins and Community Bloom, encounter the moon moth, and improve the shop with a grow lamp or rain barrel.
 
-Progress, sound preference, plants, and the grow-lamp upgrade are stored locally in the browser.
+Progress, sound preference, living plant condition, and upgrades are stored locally in the browser.
 
 ## Technical notes
 
 - Build-free HTML, CSS, and JavaScript ES modules.
 - Three.js `0.179.1` is vendored under `vendor/` with its MIT license.
-- Three original botanical shop textures were generated with OpenAI ImageGen using `gpt-image-2`-oriented production prompts, then resized for mobile delivery.
+- Three botanical shop textures and six original customer cutouts were generated with OpenAI ImageGen using `gpt-image-2`-oriented production prompts, then optimized for web delivery.
 - No copied models, characters, names, layouts, or artwork from the reference game are included.
 - See `notes.md` for the chronological build log and asset prompt summary.

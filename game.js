@@ -4,37 +4,38 @@ const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
 const lerp = THREE.MathUtils.lerp;
 const STORAGE_KEY = "mostly-alive-plants-save-v2";
+const SAVE_VERSION = 3;
 const CARES = ["water", "mist", "prune"];
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const SPECIES = [
-  { name: "Button Fern", traits: ["lush", "shade-loving"], price: 18, shape: "fern", color: 0x5e945a },
-  { name: "Velvet Pothos", traits: ["trailing", "easygoing"], price: 20, shape: "vine", color: 0x567a45 },
-  { name: "Pinstripe Calathea", traits: ["dramatic", "patterned"], price: 24, shape: "fan", color: 0x386549 },
-  { name: "Pocket Succulent", traits: ["sunny", "sturdy"], price: 16, shape: "succulent", color: 0x83a984 },
-  { name: "Little Monstera", traits: ["bold", "lush"], price: 26, shape: "broad", color: 0x3d8050 },
-  { name: "Snake Plant", traits: ["upright", "easygoing"], price: 22, shape: "spear", color: 0x718b3c },
-  { name: "Moon Cactus", traits: ["strange", "sunny"], price: 28, shape: "cactus", color: 0x4f8c67 },
+  { name: "Button Fern", traits: ["lush", "shade-loving"], price: 18, shape: "fern", color: 0x5e945a, dryRate: 0.24 },
+  { name: "Velvet Pothos", traits: ["trailing", "easygoing"], price: 20, shape: "vine", color: 0x567a45, dryRate: 0.14 },
+  { name: "Pinstripe Calathea", traits: ["dramatic", "patterned"], price: 24, shape: "fan", color: 0x386549, dryRate: 0.22 },
+  { name: "Pocket Succulent", traits: ["sunny", "sturdy"], price: 16, shape: "succulent", color: 0x83a984, dryRate: 0.06 },
+  { name: "Little Monstera", traits: ["bold", "lush"], price: 26, shape: "broad", color: 0x3d8050, dryRate: 0.17 },
+  { name: "Snake Plant", traits: ["upright", "easygoing"], price: 22, shape: "spear", color: 0x718b3c, dryRate: 0.07 },
+  { name: "Moon Cactus", traits: ["strange", "sunny"], price: 28, shape: "cactus", color: 0x4f8c67, dryRate: 0.045 },
 ];
 
 const CUSTOMERS = [
-  { name: "Mina", color: 0xe39a7b, line: "My windowsill needs a little courage." },
-  { name: "Basil", color: 0x7189a6, line: "I promised myself I could keep one alive." },
-  { name: "Jo", color: 0xd3a64b, line: "My bookshelf is looking emotionally vacant." },
-  { name: "Nori", color: 0x8f74a8, line: "I want a roommate who enjoys silence." },
-  { name: "Pip", color: 0x6d9a78, line: "Something peculiar, but polite, please." },
-  { name: "Sol", color: 0xc9785e, line: "The sunniest corner of my flat is lonely." },
+  { name: "Mina", color: 0xe39a7b, asset: "assets/characters/mina.png", line: "My windowsill needs a little courage." },
+  { name: "Basil", color: 0x7189a6, asset: "assets/characters/basil.png", line: "I promised myself I could keep one alive." },
+  { name: "Jo", color: 0xd3a64b, asset: "assets/characters/jo.png", line: "My bookshelf is looking emotionally vacant." },
+  { name: "Nori", color: 0x8f74a8, asset: "assets/characters/nori.png", line: "I want a roommate who enjoys silence." },
+  { name: "Pip", color: 0x6d9a78, asset: "assets/characters/pip.png", line: "Something peculiar, but polite, please." },
+  { name: "Sol", color: 0xc9785e, asset: "assets/characters/sol.png", line: "The sunniest corner of my flat is lonely." },
 ];
 
 const SLOT_DATA = [
-  { x: -4.55, y: 1.12, z: -4.08, size: 0.75 },
-  { x: -2.95, y: 1.12, z: -4.08, size: 0.75 },
-  { x: -4.55, y: 2.55, z: -4.08, size: 0.68 },
-  { x: -2.95, y: 2.55, z: -4.08, size: 0.68 },
-  { x: 1.2, y: 0.06, z: -3.85, size: 0.9 },
-  { x: -1.3, y: 0.06, z: -2.85, size: 0.9 },
-  { x: -3.7, y: 0.06, z: 0.2, size: 0.9 },
-  { x: 1.05, y: 1.3, z: 1.15, size: 0.72 },
+  { x: -4.55, y: 1.12, z: -4.08, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
+  { x: -2.95, y: 1.12, z: -4.08, size: 0.75, ceilingY: 2.37, zone: "lowerShelf", zoneLabel: "lower shelf" },
+  { x: -4.55, y: 2.55, z: -4.08, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
+  { x: -2.95, y: 2.55, z: -4.08, size: 0.68, zone: "upperShelf", zoneLabel: "upper shelf" },
+  { x: 1.2, y: 0.06, z: -3.85, size: 0.9, zone: "window", zoneLabel: "sunny window" },
+  { x: -1.3, y: 0.06, z: -2.85, size: 0.9, zone: "floor", zoneLabel: "open floor" },
+  { x: -3.7, y: 0.06, z: 0.2, size: 0.9, zone: "floor", zoneLabel: "open floor" },
+  { x: 1.05, y: 1.4, z: 1.15, size: 0.72, zone: "counter", zoneLabel: "front counter" },
 ];
 
 function seeded(seed) {
@@ -55,6 +56,9 @@ function plantRecord(speciesName, seed = Math.random() * 99999) {
     price: species.price + Math.floor(rng() * 4),
     colorShift: rng() * 0.12 - 0.06,
     care: { water: false, mist: false, prune: false },
+    hydration: Math.round(64 + rng() * 27),
+    recoveredToday: false,
+    thirstWarned: false,
     slot: null,
   };
 }
@@ -65,7 +69,7 @@ function freshState() {
   fern.slot = 0;
   pothos.slot = 1;
   return {
-    version: 2,
+    version: SAVE_VERSION,
     day: 1,
     coins: 28,
     bloom: 8,
@@ -78,8 +82,11 @@ function freshState() {
     dailySales: 0,
     dailyRevenue: 0,
     dailyCare: 0,
+    dailyPerfects: 0,
+    dailyRecoveries: 0,
+    displayGoal: null,
     mothSeen: false,
-    upgrades: { growLamp: false },
+    upgrades: { growLamp: false, rainBarrel: false },
   };
 }
 
@@ -88,13 +95,28 @@ function loadState() {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!value || !Array.isArray(value.inventory)) return freshState();
     const base = freshState();
+    const customers = Array.isArray(value.customers) ? value.customers.map((customer, index) => {
+      const species = SPECIES.find((item) => item.name === customer.speciesHint) || SPECIES[index % SPECIES.length];
+      const need = customer.need || species.traits[0];
+      return {
+        ...customer,
+        need,
+        bonusTrait: customer.bonusTrait || species.traits.find((trait) => trait !== need) || species.traits[0],
+        careWish: customer.careWish || CARES[index % CARES.length],
+      };
+    }) : [];
     return {
       ...base,
       ...value,
-      version: 2,
+      version: SAVE_VERSION,
       upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
+      customers,
+      crateQueue: Array.isArray(value.crateQueue) ? value.crateQueue : [],
       inventory: value.inventory.map((plant) => ({
         ...plant,
+        hydration: clamp(Number.isFinite(plant.hydration) ? plant.hydration : 78, 8, 100),
+        recoveredToday: Boolean(plant.recoveredToday),
+        thirstWarned: Boolean(plant.thirstWarned),
         care: { water: false, mist: false, prune: false, ...(plant.care || {}) },
       })),
     };
@@ -115,12 +137,14 @@ document.addEventListener("DOMContentLoaded", () => {
     day: $("topbar-day"),
     coins: $("topbar-coins"),
     bloom: $("topbar-bloom"),
+    taskCard: document.querySelector(".task-card"),
     taskTitle: $("task-title"),
     taskCopy: $("task-copy"),
     action: $("action-button"),
     careTray: $("care-tray"),
     care: { water: $("care-water"), mist: $("care-mist"), prune: $("care-prune") },
     customerCard: $("customer-card"),
+    customerAvatar: document.querySelector(".customer-avatar"),
     customerName: $("customer-name"),
     customerRequest: $("customer-request"),
     toast: $("toast"),
@@ -185,6 +209,11 @@ document.addEventListener("DOMContentLoaded", () => {
     pinchDistance: 0,
     audio: null,
     master: null,
+    textures: {},
+    conditionUiTimer: 0,
+    conditionSaveTimer: 0,
+    conditionDirty: false,
+    lastSaleGrade: "good",
   };
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -203,22 +232,63 @@ document.addEventListener("DOMContentLoaded", () => {
   loadShop();
 
   function save() {
+    state.version = SAVE_VERSION;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode */ }
   }
 
+  function makeDisplayGoal(rng) {
+    const occupied = new Set(state.inventory.map((plant) => plant.slot).filter(Number.isInteger));
+    const freeZones = new Set(SLOT_DATA.filter((slot, index) => !occupied.has(index)).map((slot) => slot.zone));
+    const deliveries = state.crateQueue.map((name) => SPECIES.find((species) => species.name === name)).filter(Boolean);
+    const moments = [
+      { trait: "trailing", zone: "upperShelf", copy: "Let something trailing cascade from the upper shelf." },
+      { trait: "sunny", zone: "window", copy: "Make a sunny-window moment." },
+      { trait: "upright", zone: "floor", copy: "Give an upright plant room on the floor." },
+      { trait: "lush", zone: "lowerShelf", copy: "Build a lush little shelf vignette." },
+      { trait: "strange", zone: "counter", copy: "Feature something strange at the front counter." },
+    ];
+    const possible = moments.filter((moment) => freeZones.has(moment.zone) && deliveries.some((species) => species.traits.includes(moment.trait)));
+    let choice = possible[Math.floor(rng() * possible.length)];
+    if (!choice) {
+      const slot = SLOT_DATA.find((item, index) => !occupied.has(index));
+      const species = deliveries[0];
+      if (!slot || !species) return null;
+      const trait = species.traits[Math.floor(rng() * species.traits.length)];
+      choice = { trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` };
+    }
+    return {
+      id: `day-${state.day}-${choice.zone}-${choice.trait}`,
+      ...choice,
+      rewardCoins: 6,
+      rewardBloom: 3,
+      claimed: false,
+    };
+  }
+
   function setupDay(force = false) {
-    if (!force && state.customers?.length === 3 && state.crateQueue) return;
+    if (!force && state.customers?.length === 3 && Array.isArray(state.crateQueue)) {
+      if (!state.displayGoal && state.crateQueue.length) state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
+      return;
+    }
     const rng = seeded(state.day * 9187 + 41);
     state.customers = [];
     state.crateQueue = [];
+    const usedPeople = new Set();
     for (let index = 0; index < 3; index += 1) {
-      const species = SPECIES[Math.floor(rng() * SPECIES.length)];
-      const person = CUSTOMERS[(Math.floor(rng() * CUSTOMERS.length) + index) % CUSTOMERS.length];
+      const speciesPool = index === 0 ? SPECIES.filter((species) => species.dryRate >= 0.1) : SPECIES;
+      const species = speciesPool[Math.floor(rng() * speciesPool.length)];
+      let personIndex = (Math.floor(rng() * CUSTOMERS.length) + index) % CUSTOMERS.length;
+      while (usedPeople.has(personIndex)) personIndex = (personIndex + 1) % CUSTOMERS.length;
+      usedPeople.add(personIndex);
+      const person = CUSTOMERS[personIndex];
       const need = species.traits[Math.floor(rng() * species.traits.length)];
-      state.customers.push({ ...person, need, speciesHint: species.name });
+      const bonusTrait = species.traits.find((trait) => trait !== need) || species.traits[0];
+      const careWish = CARES[Math.floor(rng() * CARES.length)];
+      state.customers.push({ ...person, need, bonusTrait, careWish, speciesHint: species.name });
       state.crateQueue.push(species.name);
     }
     state.crates = 3;
+    state.displayGoal = makeDisplayGoal(rng);
     save();
   }
 
@@ -228,24 +298,27 @@ document.addEventListener("DOMContentLoaded", () => {
       wood: "assets/textures/painted-oak.png",
       wall: "assets/textures/botanical-plaster.png",
     };
+    CUSTOMERS.forEach((customer) => { files[`customer-${customer.name.toLowerCase()}`] = customer.asset; });
     const loader = new THREE.TextureLoader();
     const textures = {};
+    const total = Object.keys(files).length;
     let done = 0;
-    updateLoading(0, 3);
+    updateLoading(0, total);
     await Promise.all(Object.entries(files).map(async ([key, url]) => {
       try {
         textures[key] = await loader.loadAsync(url);
         textures[key].colorSpace = THREE.SRGBColorSpace;
-        textures[key].wrapS = textures[key].wrapT = THREE.RepeatWrapping;
+        textures[key].wrapS = textures[key].wrapT = key.startsWith("customer-") ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
       } catch {
         textures[key] = null;
       }
       done += 1;
-      updateLoading(done, 3);
+      updateLoading(done, total);
     }));
     if (textures.floor) textures.floor.repeat.set(3, 3);
     if (textures.wood) textures.wood.repeat.set(2, 2);
     if (textures.wall) textures.wall.repeat.set(2, 1);
+    run.textures = textures;
     buildShop(textures);
     run.ready = true;
     if (ui.start) ui.start.disabled = false;
@@ -373,6 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
     makeSlots();
     makeCrates(woodMat, darkWood);
     makeGrowLamp(brass);
+    makeRainBarrel(woodMat, brass);
     makeSelectionRing();
     rebuildPlants();
     updateCrates();
@@ -405,6 +479,12 @@ document.addEventListener("DOMContentLoaded", () => {
       object.rotation.x = -Math.PI / 2;
       object.position.set(slot.x, slot.y + 0.015, slot.z);
       object.userData.entity = { kind: "slot", id: index };
+      const hitTarget = new THREE.Mesh(
+        new THREE.CircleGeometry(0.5, 24),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false, side: THREE.DoubleSide }),
+      );
+      hitTarget.position.z = 0.002;
+      object.add(hitTarget);
       world.add(object);
       interactive.push(object);
       slotObjects.set(index, object);
@@ -448,6 +528,21 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(root);
   }
 
+  function makeRainBarrel(woodMat, brass) {
+    const root = new THREE.Group();
+    cylinder(root, 0.48, 0.43, 1.08, [0, 0.56, 0], woodMat, 14);
+    cylinder(root, 0.51, 0.51, 0.07, [0, 0.18, 0], brass, 14);
+    cylinder(root, 0.51, 0.51, 0.07, [0, 0.91, 0], brass, 14);
+    const lid = cylinder(root, 0.5, 0.48, 0.1, [0, 1.13, 0], material(0x526b57), 14);
+    lid.castShadow = true;
+    const tap = cylinder(root, 0.07, 0.09, 0.38, [0.36, 0.38, 0], brass, 8);
+    tap.rotation.z = -Math.PI / 2;
+    root.position.set(5.18, 0.03, -1.12);
+    root.visible = Boolean(state.upgrades.rainBarrel);
+    root.name = "rain-barrel";
+    world.add(root);
+  }
+
   function makeSelectionRing() {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffd468, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.48, 0.61, 32), mat);
@@ -459,6 +554,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function speciesOf(plant) {
     return SPECIES.find((item) => item.name === plant.species) || SPECIES[0];
+  }
+
+  function conditionOf(plant) {
+    if (plant.hydration >= 68) return { label: "thriving", icon: "●" };
+    if (plant.hydration >= 42) return { label: "comfortable", icon: "◐" };
+    return { label: "drooping", icon: "○" };
+  }
+
+  function carePastTense(care) {
+    return care === "water" ? "watered" : care === "mist" ? "misted" : "pruned";
   }
 
   function createPlant(plant) {
@@ -531,13 +636,32 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     }
+    leaves.forEach((node, index) => {
+      node.userData.basePosition = node.position.clone();
+      node.userData.baseEuler = node.rotation.clone();
+      node.userData.baseScale = node.scale.clone();
+      node.userData.radialAngle = Math.abs(node.position.x) + Math.abs(node.position.z) > 0.02
+        ? Math.atan2(node.position.z, node.position.x)
+        : (index / Math.max(leaves.length, 1)) * Math.PI * 2;
+    });
     root.userData.entity = { kind: "plant", id: plant.id };
+    root.userData.plantId = plant.id;
     root.userData.leaves = leaves;
     root.userData.phase = Math.abs(hash(plant.id)) % 100;
     root.userData.ringY = 0;
-    root.scale.setScalar(SLOT_DATA[plant.slot]?.size || 0.78);
+    root.userData.droop = clamp((48 - plant.hydration) / 40, 0, 1);
+    root.updateMatrixWorld(true);
+    root.userData.modelTop = new THREE.Box3().setFromObject(root).max.y;
+    const home = SLOT_DATA[plant.slot];
+    root.scale.setScalar(home ? scaleForSlot(root, home) : 0.78);
     interactive.push(root);
     return root;
+  }
+
+  function scaleForSlot(object, slot) {
+    if (!slot?.ceilingY || !object?.userData.modelTop) return slot?.size || 0.78;
+    const clearance = Math.max(0.1, slot.ceilingY - slot.y - 0.09);
+    return Math.min(slot.size, clearance / object.userData.modelTop);
   }
 
   function hash(text) {
@@ -579,12 +703,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateSlotGlow() {
     const occupied = new Set(state.inventory.map((plant) => plant.slot).filter(Number.isInteger));
+    const carriedPlant = state.inventory.find((plant) => plant.id === run.carried);
     slotObjects.forEach((slot, index) => {
       const available = !occupied.has(index);
+      const goalMatch = available && carriedPlant && !state.displayGoal?.claimed
+        && carriedPlant.traits.includes(state.displayGoal?.trait)
+        && SLOT_DATA[index].zone === state.displayGoal?.zone;
       slot.visible = available;
-      slot.material.opacity = run.carried && available ? 0.78 : 0.12;
-      slot.material.color.set(run.carried ? 0xffd15d : 0xd7be75);
+      slot.material.opacity = run.carried && available ? (goalMatch ? 0.96 : 0.72) : 0.12;
+      slot.material.color.set(goalMatch ? 0xff8e6e : run.carried ? 0xffd15d : 0xd7be75);
     });
+  }
+
+  function goalSummary() {
+    const goal = state.displayGoal;
+    if (!goal) return "";
+    const zone = SLOT_DATA.find((slot) => slot.zone === goal.zone)?.zoneLabel || goal.zone;
+    return goal.claimed
+      ? "Display vignette complete ✓"
+      : `Display: ${goal.trait} → ${zone} · +${goal.rewardCoins} coins · +${goal.rewardBloom} Bloom`;
+  }
+
+  function evaluateDisplayGoal(plant, slot) {
+    const goal = state.displayGoal;
+    if (!goal || goal.claimed || !plant?.traits.includes(goal.trait) || slot?.zone !== goal.zone) return false;
+    goal.claimed = true;
+    state.coins += goal.rewardCoins;
+    state.bloom += goal.rewardBloom;
+    return true;
   }
 
   function bindUi() {
@@ -608,6 +754,8 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     window.addEventListener("resize", resize);
     window.addEventListener("keydown", keyDown);
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
   }
 
   function startGame() {
@@ -630,7 +778,9 @@ document.addEventListener("DOMContentLoaded", () => {
     spawnCustomer(false);
     updateUi();
     resize();
-    toast(state.day === 1 ? "Day one. The plants are nervous too." : `Day ${state.day}. Fresh leaves, fresh chances.`);
+    const hello = state.day === 1 ? "Day one. The plants are nervous too." : `Day ${state.day}. Fresh leaves, fresh chances.`;
+    const challenge = state.displayGoal && !state.displayGoal.claimed ? ` Today’s display: ${state.displayGoal.copy}` : "";
+    toast(`${hello}${challenge}`, challenge ? 4800 : 3100);
   }
 
   function openModal(element, open) {
@@ -653,22 +803,40 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderUpgrades() {
     if (!ui.upgradeOptions) return;
     ui.upgradeOptions.replaceChildren();
-    const card = document.createElement("article");
-    card.className = "upgrade-card";
-    const title = document.createElement("h3");
-    title.textContent = state.upgrades.growLamp ? "Grow lamp installed" : "Secondhand grow lamp";
-    const copy = document.createElement("p");
-    copy.textContent = state.upgrades.growLamp
-      ? "Its honey-colored light mists every displayed plant overnight."
-      : "50 coins · Automatically mists displayed plants each new morning.";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "button button-primary upgrade-buy";
-    button.textContent = state.upgrades.growLamp ? "Already glowing" : "Install · 50";
-    button.disabled = state.upgrades.growLamp;
-    button.addEventListener("click", buyGrowLamp);
-    card.append(title, copy, button);
-    ui.upgradeOptions.append(card);
+    const addCard = ({ owned, title, ownedTitle, copy, ownedCopy, cost, action }) => {
+      const card = document.createElement("article");
+      card.className = "upgrade-card";
+      const heading = document.createElement("h3");
+      heading.textContent = owned ? ownedTitle : title;
+      const detail = document.createElement("p");
+      detail.textContent = owned ? ownedCopy : `${cost} coins · ${copy}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button-primary upgrade-buy";
+      button.textContent = owned ? "Already installed" : `Install · ${cost}`;
+      button.disabled = owned;
+      button.addEventListener("click", action);
+      card.append(heading, detail, button);
+      ui.upgradeOptions.append(card);
+    };
+    addCard({
+      owned: state.upgrades.growLamp,
+      title: "Secondhand grow lamp",
+      ownedTitle: "Grow lamp installed",
+      copy: "Automatically mists displayed plants each new morning.",
+      ownedCopy: "Its honey-colored light mists every displayed plant overnight.",
+      cost: 50,
+      action: buyGrowLamp,
+    });
+    addCard({
+      owned: state.upgrades.rainBarrel,
+      title: "Little rain barrel",
+      ownedTitle: "Rain barrel installed",
+      copy: "Plants dry out 35% more slowly while the shop is open.",
+      ownedCopy: "Collected rain keeps every pot comfortable for longer.",
+      cost: 45,
+      action: buyRainBarrel,
+    });
   }
 
   function buyGrowLamp() {
@@ -690,39 +858,57 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
+  function buyRainBarrel() {
+    if (state.upgrades.rainBarrel) return;
+    if (state.coins < 45) {
+      sound("error");
+      toast(`You need ${45 - state.coins} more coins. The clouds are patient.`);
+      return;
+    }
+    state.coins -= 45;
+    state.upgrades.rainBarrel = true;
+    state.bloom += 4;
+    const barrel = world.getObjectByName("rain-barrel");
+    if (barrel) barrel.visible = true;
+    save();
+    sound("upgrade");
+    toast("The rain barrel is ready. Every plant exhales at once.");
+    renderUpgrades();
+    updateUi();
+  }
+
   function currentCustomer() {
     return state.customers?.[state.customerIndex] || null;
   }
 
   function createCustomer(person) {
     const root = new THREE.Group();
-    const skinColors = [0xf0bd91, 0x9c654c, 0xd9976d, 0x704a39];
-    const skin = material(skinColors[Math.abs(hash(person.name)) % skinColors.length]);
-    const outfit = material(person.color);
-    const dark = material(0x34483c);
-    cylinder(root, 0.38, 0.48, 1.08, [0, 1.35, 0], outfit, 7);
-    cylinder(root, 0.17, 0.15, 0.95, [-0.24, 0.49, 0], dark, 6);
-    cylinder(root, 0.17, 0.15, 0.95, [0.24, 0.49, 0], dark, 6);
-    cylinder(root, 0.12, 0.12, 0.9, [-0.48, 1.36, 0], skin, 7).rotation.z = -0.08;
-    cylinder(root, 0.12, 0.12, 0.9, [0.48, 1.36, 0], skin, 7).rotation.z = 0.08;
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.39, 2), skin);
-    head.position.set(0, 2.1, 0);
-    head.castShadow = true;
-    root.add(head);
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), material(0x44362f));
-    hair.position.set(0, 2.25, -0.02);
-    hair.castShadow = true;
-    root.add(hair);
-    [-0.13, 0.13].forEach((x) => {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 4), dark);
-      eye.position.set(x, 2.12, 0.36);
-      root.add(eye);
-    });
-    const bag = box(root, [0.5, 0.58, 0.18], [0.6, 0.98, -0.03], material(0xd5c18c));
-    bag.rotation.z = -0.1;
+    const texture = run.textures[`customer-${person.name.toLowerCase()}`];
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.58, 24),
+      new THREE.MeshBasicMaterial({ color: 0x27372c, transparent: true, opacity: 0.2, depthWrite: false }),
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.scale.set(1, 0.42, 1);
+    shadow.position.y = 0.018;
+    root.add(shadow);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: texture,
+      color: texture ? 0xffffff : person.color,
+      transparent: true,
+      alphaTest: texture ? 0.055 : 0,
+      depthWrite: true,
+      toneMapped: false,
+    }));
+    sprite.center.set(0.5, 0);
+    sprite.position.y = 0.025;
+    sprite.scale.set(1.58, 2.82, 1);
+    sprite.renderOrder = 2;
+    root.add(sprite);
     root.userData.entity = { kind: "customer", id: state.customerIndex };
     root.userData.phase = Math.random() * 6;
     root.userData.ringY = 0;
+    root.userData.sprite = sprite;
     interactive.push(root);
     return root;
   }
@@ -781,7 +967,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const plant = state.inventory.find((item) => item.id === id);
       if (!plant) return;
       if (!Number.isInteger(plant.slot)) {
-        const slot = firstFreeSlot();
+        const slot = firstFreeSlot(plant);
         if (slot === null) toast("Every display is full. A good problem, briefly.");
         else placePlant(plant.id, slot);
       } else offerPlant(plant);
@@ -801,6 +987,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const speciesName = state.crateQueue.shift();
     const plant = plantRecord(speciesName, state.day * 100 + state.crates * 17);
+    if (state.crates === 3) plant.hydration = 36 + (state.day % 7);
     state.inventory.push(plant);
     state.crates -= 1;
     const object = createPlant(plant);
@@ -817,12 +1004,27 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSlotGlow();
     save();
     sound("crate");
-    toast(`${plant.species}! A little rumpled, fundamentally promising.`);
+    toast(plant.hydration < 42
+      ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
+      : `${plant.species}! A little rumpled, fundamentally promising.`);
     updateUi();
   }
 
-  function firstFreeSlot() {
+  function firstFreeSlot(plant = null) {
     const used = new Set(state.inventory.map((plant) => plant.slot).filter(Number.isInteger));
+    const object = plant ? plantObjects.get(plant.id) : null;
+    if (plant && state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)) {
+      const goalIndex = SLOT_DATA.findIndex((slot, index) => !used.has(index)
+        && slot.zone === state.displayGoal.zone
+        && (!object || scaleForSlot(object, slot) >= slot.size * 0.74));
+      if (goalIndex >= 0) return goalIndex;
+    }
+    for (let index = 0; index < SLOT_DATA.length; index += 1) {
+      if (used.has(index)) continue;
+      const slot = SLOT_DATA[index];
+      if (object && scaleForSlot(object, slot) < slot.size * 0.74) continue;
+      return index;
+    }
     for (let index = 0; index < SLOT_DATA.length; index += 1) if (!used.has(index)) return index;
     return null;
   }
@@ -843,16 +1045,19 @@ document.addEventListener("DOMContentLoaded", () => {
         from: object.position.clone(),
         to: new THREE.Vector3(target.x, target.y, target.z),
         startScale: object.scale.x,
-        endScale: target.size,
+        endScale: scaleForSlot(object, target),
         time: 0,
         duration: 0.48,
         arc: 0.65,
       });
     }
     run.carried = null;
+    const goalWon = evaluateDisplayGoal(plant, target);
     save();
-    sound("place");
-    toast(`${plant.species} has found its light.`);
+    sound(goalWon ? "upgrade" : "place");
+    toast(goalWon
+      ? `Display vignette complete! +${state.displayGoal.rewardCoins} coins and +${state.displayGoal.rewardBloom} Bloom.`
+      : `${plant.species} has found its light.`);
     updateSlotGlow();
     updateUi();
   }
@@ -865,21 +1070,42 @@ document.addEventListener("DOMContentLoaded", () => {
     const plant = state.inventory.find((item) => item.id === run.selected.id);
     const object = plantObjects.get(run.selected.id);
     if (!plant || !object) return;
-    if (plant.care[type]) {
+    const canRewater = type === "water" && plant.hydration < 78;
+    if (plant.care[type] && !canRewater) {
       toast(type === "water" ? "No swamp ambitions today." : `Already ${type === "mist" ? "misty" : "tidy"} enough.`);
       sound("error");
       return;
     }
+    const firstCare = !plant.care[type];
+    const wasDrooping = plant.hydration < 42;
     plant.care[type] = true;
-    state.dailyCare += 1;
-    state.bloom += 1;
-    const colors = { water: 0x75b8cc, mist: 0xd5eee4, prune: 0x719e65 };
-    burst(object.position.clone().add(new THREE.Vector3(0, 1.2, 0)), colors[type], type === "mist" ? 20 : 12);
+    if (firstCare) {
+      state.dailyCare += 1;
+      state.bloom += 1;
+    }
+    let recoveryReward = false;
+    if (type === "water") {
+      plant.hydration = 100;
+      plant.thirstWarned = false;
+      if (wasDrooping && !plant.recoveredToday) {
+        plant.recoveredToday = true;
+        state.dailyRecoveries += 1;
+        state.bloom += 1;
+        recoveryReward = true;
+      }
+      waterPour(object);
+    } else if (type === "mist") {
+      mistCloud(object);
+    } else {
+      burst(object.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 0x719e65, 12);
+    }
     if (!reduceMotion) movers.push({ object, from: object.position.clone(), to: object.position.clone(), startScale: object.scale.x, endScale: object.scale.x, time: 0, duration: 0.42, arc: 0.16 });
     save();
     sound(type);
     const messages = {
-      water: `${plant.species} drinks with surprising urgency.`,
+      water: recoveryReward
+        ? `${plant.species} lifts every leaf. Thirst rescue! +1 Bloom.`
+        : `${plant.species} drinks with surprising urgency.`,
       mist: `${plant.species} is now experiencing weather.`,
       prune: `One tiny haircut. Considerable confidence.`,
     };
@@ -899,9 +1125,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     run.busy = true;
     const careCount = CARES.filter((care) => plant.care[care]).length;
-    const payout = plant.price + careCount * 3 + (state.upgrades.growLamp ? 2 : 0);
+    const extras = [
+      plant.traits.includes(person.bonusTrait),
+      Boolean(plant.care[person.careWish]),
+      plant.hydration >= 68,
+    ].filter(Boolean).length;
+    const perfect = extras === 3;
+    const payout = plant.price + careCount * 2 + extras * 3 + (perfect ? 3 : 0) + (state.upgrades.growLamp ? 2 : 0);
     state.coins += payout;
-    state.bloom += 3 + (careCount === 3 ? 2 : 0);
+    state.bloom += 2 + extras;
+    if (perfect) state.dailyPerfects += 1;
+    const perfectDayBonus = perfect && state.dailyPerfects === 3;
+    if (perfectDayBonus) state.bloom += 8;
     state.dailyRevenue += payout;
     state.dailySales += 1;
     state.customerIndex += 1;
@@ -920,9 +1155,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.dataset.selection = "none";
     if (run.customer) run.customer.userData.entity = null;
     run.customerTween = { mode: "exit", time: 0 };
+    run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
     sound("sale");
-    toast(`Perfect match! ${person.name} pays ${payout} coins.`);
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays ${payout} coins.${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}`);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -972,7 +1208,75 @@ document.addEventListener("DOMContentLoaded", () => {
       bits.push({ object: bit, velocity: new THREE.Vector3((Math.random() - 0.5) * 1.3, Math.random() * 1.4 + 0.4, (Math.random() - 0.5) * 1.3) });
     }
     world.add(root);
-    effects.push({ root, bits, age: 0, duration: 1.1 });
+    effects.push({ kind: "burst", root, bits, age: 0, duration: 1.1, geometries: [geometry], materials: [mat] });
+  }
+
+  function waterPour(object) {
+    const root = new THREE.Group();
+    const size = object.scale.x;
+    const target = object.position.clone().add(new THREE.Vector3(0, 0.67 * size, 0));
+    const origin = target.clone().add(new THREE.Vector3(0.78 * size, 1.65 * size, 0.28 * size));
+    const bits = [];
+    const geometry = new THREE.SphereGeometry(0.052, 7, 5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x69b9df, transparent: true, opacity: 0.92, depthWrite: false });
+    const count = reduceMotion ? 5 : 14;
+    for (let index = 0; index < count; index += 1) {
+      const drop = new THREE.Mesh(geometry, mat);
+      drop.position.copy(origin).add(new THREE.Vector3((Math.random() - 0.5) * 0.12, Math.random() * 0.14, (Math.random() - 0.5) * 0.12));
+      drop.scale.set(0.72, 2.8 + Math.random() * 1.7, 0.72);
+      drop.visible = false;
+      root.add(drop);
+      const travel = 0.48 + Math.random() * 0.09;
+      bits.push({
+        object: drop,
+        delay: index * (reduceMotion ? 0.07 : 0.035),
+        velocity: target.clone().sub(origin).divideScalar(travel).add(new THREE.Vector3((Math.random() - 0.5) * 0.18, 0.35, (Math.random() - 0.5) * 0.18)),
+      });
+    }
+    const rippleMaterial = new THREE.MeshBasicMaterial({ color: 0x91d6ec, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+    const rippleGeometry = new THREE.RingGeometry(0.09, 0.15, 20);
+    const ripple = new THREE.Mesh(rippleGeometry, rippleMaterial);
+    ripple.rotation.x = -Math.PI / 2;
+    ripple.position.copy(target).add(new THREE.Vector3(0, 0.025, 0));
+    ripple.scale.setScalar(0.2);
+    root.add(ripple);
+    world.add(root);
+    effects.push({
+      kind: "water",
+      root,
+      bits,
+      ripple,
+      rippleMaterial,
+      age: 0,
+      duration: reduceMotion ? 0.78 : 1.05,
+      geometries: [geometry, rippleGeometry],
+      materials: [mat, rippleMaterial],
+    });
+  }
+
+  function mistCloud(object) {
+    const root = new THREE.Group();
+    const size = object.scale.x;
+    root.position.copy(object.position).add(new THREE.Vector3(0, object.userData.modelTop * size * 0.63, 0));
+    const bits = [];
+    const geometry = new THREE.SphereGeometry(0.12, 7, 5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xdff7f1, transparent: true, opacity: 0.48, depthWrite: false });
+    const count = reduceMotion ? 7 : 22;
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.4;
+      const radius = 0.12 + Math.random() * 0.42 * size;
+      const puff = new THREE.Mesh(geometry, mat);
+      puff.position.set(Math.cos(angle) * radius, (Math.random() - 0.5) * 0.65 * size, Math.sin(angle) * radius);
+      const scale = 0.65 + Math.random() * 1.1;
+      puff.scale.set(scale, scale * 0.82, scale);
+      root.add(puff);
+      bits.push({
+        object: puff,
+        velocity: new THREE.Vector3(Math.cos(angle) * (0.12 + Math.random() * 0.28), 0.08 + Math.random() * 0.22, Math.sin(angle) * (0.12 + Math.random() * 0.28)),
+      });
+    }
+    world.add(root);
+    effects.push({ kind: "mist", root, bits, age: 0, duration: 1.45, geometries: [geometry], materials: [mat] });
   }
 
   function showReport() {
@@ -988,7 +1292,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ui.reportTitle) ui.reportTitle.textContent = `Day ${String(state.day).padStart(2, "0")} — shutters down`;
     if (ui.reportCopy) {
       const flourish = state.dailyCare >= 6 ? "The leaves are immaculate." : "A few leaves could use attention tomorrow.";
-      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins earned · ${state.dailyCare} care moments. ${flourish}`;
+      const display = state.displayGoal?.claimed ? "Display challenge complete." : "The display challenge can try again tomorrow.";
+      ui.reportCopy.textContent = `${state.dailySales} plants rehomed · ${state.dailyRevenue} coins earned · ${state.dailyCare} care moments · ${state.dailyPerfects} perfect brief${state.dailyPerfects === 1 ? "" : "s"} · ${state.dailyRecoveries} thirst rescue${state.dailyRecoveries === 1 ? "" : "s"}. ${display} ${flourish}`;
     }
     sound("report");
     save();
@@ -1000,10 +1305,15 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailySales = 0;
     state.dailyRevenue = 0;
     state.dailyCare = 0;
+    state.dailyPerfects = 0;
+    state.dailyRecoveries = 0;
     state.customers = [];
     state.crateQueue = [];
+    state.displayGoal = null;
     state.inventory.forEach((plant) => {
       plant.care = { water: false, mist: Boolean(state.upgrades.growLamp && Number.isInteger(plant.slot)), prune: false };
+      plant.recoveredToday = false;
+      plant.thirstWarned = plant.hydration <= 34;
     });
     if (state.upgrades.growLamp) state.bloom += state.inventory.filter((plant) => Number.isInteger(plant.slot)).length;
     setupDay(true);
@@ -1043,7 +1353,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (person && !saleMessage) {
       if (ui.customerName) ui.customerName.textContent = person.name;
-      if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}” Looking for something ${person.need}.`;
+      if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}” ${person.need} required · ${person.bonusTrait} + ${carePastTense(person.careWish)} + thriving bonus.`;
+      if (ui.customerAvatar) {
+        const profile = CUSTOMERS.find((customer) => customer.name === person.name);
+        ui.customerAvatar.style.backgroundImage = profile?.asset ? `url("${profile.asset}")` : "";
+        ui.customerAvatar.style.setProperty("--customer-color", `#${person.color.toString(16).padStart(6, "0")}`);
+      }
     }
 
     let action = "Select something";
@@ -1052,6 +1367,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let copy = state.crates
       ? `${state.crates} crate${state.crates === 1 ? "" : "s"} arrived with suspicious air holes. Tap one to unpack it.`
       : person ? `Find a ${person.need} plant, care for it, then make the match.` : "The shop is quiet for a minute.";
+    if (state.displayGoal) copy += ` ${goalSummary()}.`;
     const selected = run.selected;
     if (selected?.kind === "crate") {
       action = state.crates ? `Unpack crate · ${state.crates} left` : "All crates unpacked";
@@ -1060,8 +1376,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const plant = state.inventory.find((item) => item.id === selected.id);
       if (plant) {
         const careCount = CARES.filter((care) => plant.care[care]).length;
+        const condition = conditionOf(plant);
+        const goalFit = state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)
+          ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
+          : "";
         title = plant.species;
-        copy = `${plant.traits.join(" · ")} · ${careCount}/3 care`; 
+        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} soil ${Math.round(plant.hydration)}% · ${careCount}/3 care.${goalFit}`;
         action = Number.isInteger(plant.slot) && person ? `Offer to ${person.name}` : "Place on display";
         disabled = run.busy || (Number.isInteger(plant.slot) && !person);
       }
@@ -1072,7 +1392,7 @@ document.addEventListener("DOMContentLoaded", () => {
       action = "An empty display spot";
     }
     if (saleMessage) {
-      title = "A perfect match";
+      title = run.lastSaleGrade === "perfect" ? "A perfect match" : run.lastSaleGrade === "lovely" ? "A lovely match" : "A good match";
       copy = "Wrapping the pot in yesterday’s newspaper…";
     }
     if (ui.taskTitle) ui.taskTitle.textContent = title;
@@ -1090,11 +1410,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     CARES.forEach((care) => {
       if (!ui.care[care]) return;
+      const done = care === "water"
+        ? Boolean(plant?.care.water && plant.hydration >= 78)
+        : Boolean(plant?.care[care]);
+      const needed = care === "water"
+        ? Boolean(plant && (!plant.care.water || plant.hydration < 78))
+        : Boolean(plant && !plant.care[care]);
       ui.care[care].disabled = !plant || run.busy;
-      ui.care[care].classList.toggle("is-done", Boolean(plant?.care[care]));
-      ui.care[care].dataset.needed = String(Boolean(plant && !plant.care[care]));
-      ui.care[care].setAttribute("aria-pressed", String(Boolean(plant?.care[care])));
+      ui.care[care].classList.toggle("is-done", done);
+      ui.care[care].dataset.needed = String(needed);
+      ui.care[care].setAttribute("aria-pressed", String(done));
+      if (care === "water" && plant) ui.care[care].setAttribute("aria-label", `Water plant, soil hydration ${Math.round(plant.hydration)} percent`);
     });
+    requestAnimationFrame(positionCustomerCard);
+  }
+
+  function positionCustomerCard() {
+    if (!ui.customerCard || !ui.taskCard) return;
+    if (innerWidth <= 600 && innerHeight > innerWidth) {
+      ui.customerCard.style.top = `${Math.ceil(ui.taskCard.getBoundingClientRect().bottom + 10)}px`;
+    } else {
+      ui.customerCard.style.top = "";
+    }
   }
 
   function toast(message, duration = 3100) {
@@ -1231,6 +1568,7 @@ document.addEventListener("DOMContentLoaded", () => {
       clearTimeout(run.orientationTimer);
       if (show) run.orientationTimer = setTimeout(dismissOrientationHint, 2200);
     }
+    requestAnimationFrame(positionCustomerCard);
   }
 
   function dismissOrientationHint() {
@@ -1336,13 +1674,34 @@ document.addEventListener("DOMContentLoaded", () => {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     const time = clock.elapsedTime;
-    if (!reduceMotion) {
-      plantObjects.forEach((plant) => {
-        (plant.userData.leaves || []).forEach((leaf, index) => {
-          leaf.rotation.z = leaf.userData.baseRotation + Math.sin(time * 0.75 + plant.userData.phase + index) * 0.018;
-        });
+    updatePlantCondition(dt);
+    plantObjects.forEach((object) => {
+      const plant = state.inventory.find((item) => item.id === object.userData.plantId);
+      if (!plant) return;
+      const targetDroop = clamp((48 - plant.hydration) / 40, 0, 1);
+      object.userData.droop = lerp(object.userData.droop || 0, targetDroop, 1 - Math.exp(-dt * 3.3));
+      const droop = object.userData.droop;
+      (object.userData.leaves || []).forEach((leaf, index) => {
+        const basePosition = leaf.userData.basePosition;
+        const baseEuler = leaf.userData.baseEuler;
+        const baseScale = leaf.userData.baseScale;
+        if (!basePosition || !baseEuler || !baseScale) return;
+        const angle = leaf.userData.radialAngle;
+        const sway = reduceMotion ? 0 : Math.sin(time * 0.75 + object.userData.phase + index) * 0.018;
+        leaf.position.copy(basePosition);
+        leaf.position.y -= droop * (0.12 + (index % 3) * 0.025);
+        leaf.rotation.copy(baseEuler);
+        leaf.rotation.x += Math.sin(angle) * droop * 0.34;
+        leaf.rotation.z += Math.cos(angle) * droop * 0.46 + sway;
+        leaf.scale.copy(baseScale);
+        leaf.scale.y *= 1 - droop * 0.18;
       });
-      if (run.customer && !run.customerTween) run.customer.position.y = Math.sin(time * 1.6 + run.customer.userData.phase) * 0.025;
+    });
+    if (!reduceMotion) {
+      if (run.customer && !run.customerTween) {
+        run.customer.position.y = Math.sin(time * 1.6 + run.customer.userData.phase) * 0.025;
+        if (run.customer.userData.sprite) run.customer.userData.sprite.material.rotation = Math.sin(time * 1.3 + run.customer.userData.phase) * 0.006;
+      }
       if (run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
     }
     updateMovers(dt);
@@ -1351,6 +1710,39 @@ document.addEventListener("DOMContentLoaded", () => {
     updateMoth(dt);
     updateSelectionRing();
     renderer.render(scene, camera);
+  }
+
+  function updatePlantCondition(dt) {
+    const active = run.started
+      && document.body.dataset.gameState === "playing"
+      && !document.hidden
+      && !run.busy
+      && !ui.game?.inert;
+    if (active) {
+      const barrelMultiplier = state.upgrades.rainBarrel ? 0.65 : 1;
+      state.inventory.forEach((plant) => {
+        const before = plant.hydration;
+        plant.hydration = clamp(plant.hydration - speciesOf(plant).dryRate * barrelMultiplier * dt, 8, 100);
+        if (plant.hydration !== before) run.conditionDirty = true;
+        if (plant.hydration <= 34 && !plant.thirstWarned) {
+          plant.thirstWarned = true;
+          if (run.selected?.kind === "plant" && run.selected.id === plant.id) {
+            toast(`${plant.species} is properly drooping now. A drink will bring it back.`);
+          }
+        }
+      });
+      run.conditionUiTimer += dt;
+      run.conditionSaveTimer += dt;
+      if (run.conditionUiTimer >= 0.8) {
+        run.conditionUiTimer = 0;
+        if (run.selected?.kind === "plant") updateUi();
+      }
+      if (run.conditionDirty && run.conditionSaveTimer >= 8) {
+        run.conditionSaveTimer = 0;
+        run.conditionDirty = false;
+        save();
+      }
+    }
   }
 
   function updateMovers(dt) {
@@ -1376,13 +1768,36 @@ document.addEventListener("DOMContentLoaded", () => {
     for (let index = effects.length - 1; index >= 0; index -= 1) {
       const effect = effects[index];
       effect.age += dt;
-      effect.bits.forEach((bit) => {
-        bit.velocity.y -= dt * 1.8;
-        bit.object.position.addScaledVector(bit.velocity, dt);
-        bit.object.scale.multiplyScalar(1 - dt * 0.45);
-      });
+      const progress = clamp(effect.age / effect.duration, 0, 1);
+      if (effect.kind === "water") {
+        effect.bits.forEach((bit) => {
+          if (effect.age < bit.delay) return;
+          bit.object.visible = true;
+          bit.velocity.y -= dt * 0.72;
+          bit.object.position.addScaledVector(bit.velocity, dt);
+          bit.object.scale.multiplyScalar(1 - dt * 0.9);
+        });
+        const splash = clamp((effect.age - 0.33) / 0.48, 0, 1);
+        effect.rippleMaterial.opacity = Math.sin(splash * Math.PI) * 0.72;
+        effect.ripple.scale.setScalar(0.2 + splash * 3.2);
+        effect.materials[0].opacity = 0.92 * (1 - progress ** 3);
+      } else if (effect.kind === "mist") {
+        effect.bits.forEach((bit) => {
+          bit.object.position.addScaledVector(bit.velocity, dt);
+          bit.object.scale.multiplyScalar(1 + dt * 0.42);
+        });
+        effect.materials[0].opacity = 0.48 * Math.sin((1 - progress) * Math.PI / 2);
+      } else {
+        effect.bits.forEach((bit) => {
+          bit.velocity.y -= dt * 1.8;
+          bit.object.position.addScaledVector(bit.velocity, dt);
+          bit.object.scale.multiplyScalar(1 - dt * 0.45);
+        });
+      }
       if (effect.age >= effect.duration) {
         effect.root.removeFromParent();
+        effect.geometries?.forEach((geometry) => geometry.dispose());
+        effect.materials?.forEach((material) => material.dispose());
         effects.splice(index, 1);
       }
     }
@@ -1396,7 +1811,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const t = clamp(tween.time / duration, 0, 1);
     if (tween.mode === "enter") run.customer.position.x = lerp(6.2, 0.15, 1 - (1 - t) ** 3);
     else run.customer.position.x = lerp(0.15, 6.5, t * t);
-    run.customer.rotation.z = Math.sin(t * Math.PI * 7) * 0.025;
+    if (run.customer.userData.sprite) run.customer.userData.sprite.material.rotation = Math.sin(t * Math.PI * 7) * 0.018;
     if (t >= 1) {
       if (tween.mode === "exit") {
         unregister(run.customer);
