@@ -107,3 +107,9 @@
 - Added semantic term/value markup for the three results and limited the dialog description to the human-readable outcome sentence, so assistive technology does not announce the entire report as one breathless block.
 - Added a negative-profit color state without relying on color alone; every result retains an explicit label and signed value.
 - Browser validation used an exact Day 10 fixture at 872×600: the 478px-tall card remained fully visible, the three results stayed on one relaxed row, the action retained focus, Tab and Shift+Tab remained trapped in the modal, and the browser reported no console errors or warnings.
+
+## 2026-08-09 — Neighborhood Week v1, cast expansion
+
+- Began the agreed content-and-progression milestone by expanding the recurring 3D cast from six neighbors to twelve.
+- Added Avery, Talia, Ivo, Mae, Omar, and Rue with six new hair or headwear silhouettes, six geometry-specific outfits, varied proportions and skin tones, and small personal details such as freckles, glasses, earrings, pockets, and drawstrings. These are modeled additions rather than palette swaps.
+- Preserved the existing friendly face language and the full shoulder, elbow, hip, knee, walk, carry, contact-shadow, and raycast contracts. All twelve characters instantiate and animate successfully at 2.59–2.71 shop units tall.

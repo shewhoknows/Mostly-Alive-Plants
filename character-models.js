@@ -10,6 +10,12 @@ const PRESETS = [
   { name: "nori", skin: 0xe0ad8d, hair: 0x2e2526, style: "bun", outfit: "coat", height: 0.95, accent: 0xcdb7dc, glasses: true },
   { name: "pip", skin: 0xc78361, hair: 0x8a5737, style: "tuft", outfit: "overalls", height: 0.945, accent: 0xe7dfbd },
   { name: "sol", skin: 0x9d624a, hair: 0x4b2921, style: "ponytail", outfit: "cardigan", height: 0.99, accent: 0xf0b36e, earrings: true },
+  { name: "avery", skin: 0xd79a78, hair: 0x4a2c24, style: "undercut", outfit: "hoodie", height: 0.965, width: 0.96, accent: 0xf08c72, freckles: true },
+  { name: "talia", skin: 0x704536, hair: 0x211b1b, style: "braids", outfit: "jumpsuit", height: 0.995, width: 0.94, accent: 0xe5b850, earrings: true },
+  { name: "ivo", skin: 0xe0b18f, hair: 0x7a4a31, style: "bucket", outfit: "utility-vest", height: 0.955, width: 1.04, accent: 0x8fb99a },
+  { name: "mae", skin: 0xc98d6b, hair: 0x282326, style: "pixie", outfit: "raincoat", height: 0.96, width: 0.93, accent: 0xf0cc58, glasses: true },
+  { name: "omar", skin: 0x9e674d, hair: 0x25201f, style: "short-locs", outfit: "sweater-vest", height: 1, width: 1.06, accent: 0x9fc3cf },
+  { name: "rue", skin: 0x59382f, hair: 0x1f1b1c, style: "puffs", outfit: "smock", height: 0.975, width: 0.98, accent: 0xd49ac1, earrings: true },
 ];
 
 function hashText(value) {
@@ -173,6 +179,20 @@ function buildFace(head, materials, preset, rng) {
   addSphere(head, 0.033, [-0.19, -0.067, 0.255], materials.cheek, "left-cheek", [1.1, 0.48, 0.24], 0);
   addSphere(head, 0.033, [0.19, -0.067, 0.255], materials.cheek, "right-cheek", [1.1, 0.48, 0.24], 0);
 
+  if (preset.freckles) {
+    [-0.155, -0.105, 0.105, 0.155].forEach((x, index) => {
+      addSphere(
+        head,
+        0.009,
+        [x, -0.027 - (index % 2) * 0.018, 0.316],
+        materials.freckle,
+        `freckle-${index + 1}`,
+        [0.8, 0.65, 0.3],
+        0,
+      );
+    });
+  }
+
   if (preset.glasses) {
     [-1, 1].forEach((side) => {
       addMesh(
@@ -253,6 +273,73 @@ function addHair(head, materials, preset) {
         [0, 0, (index - 1) * -0.35],
       );
     });
+  } else if (preset.style === "undercut") {
+    addSphere(head, 0.17, [-0.11, 0.3, 0.03], materials.hair, "swept-quiff", [1.35, 0.7, 0.78], 0);
+    addSphere(head, 0.105, [0.105, 0.275, 0.08], materials.hair, "quiff-tip", [1.18, 0.62, 0.64], 0);
+    addBox(head, [0.035, 0.17, 0.045], [0.272, 0.11, 0.13], materials.hair, "undercut-line", [0, 0, -0.18]);
+  } else if (preset.style === "braids") {
+    [-1, 1].forEach((side) => {
+      for (let index = 0; index < 4; index += 1) {
+        addSphere(
+          head,
+          0.072 - index * 0.006,
+          [side * (0.275 + index * 0.01), 0.06 - index * 0.115, -0.07 - index * 0.015],
+          materials.hair,
+          `${side < 0 ? "left" : "right"}-braid-${index + 1}`,
+          [0.74, 1.08, 0.72],
+          0,
+        );
+      }
+      addSphere(
+        head,
+        0.033,
+        [side * 0.306, -0.325, -0.11],
+        materials.accent,
+        `${side < 0 ? "left" : "right"}-braid-tie`,
+        null,
+        0,
+      );
+    });
+  } else if (preset.style === "bucket") {
+    addCylinder(head, [0.34, 0.3], 0.2, [0, 0.285, -0.015], materials.accent, "bucket-hat-crown", 12);
+    addCylinder(head, [0.43, 0.39], 0.055, [0, 0.19, -0.005], materials.accentDark, "bucket-hat-brim", 14);
+    addBox(head, [0.31, 0.025, 0.012], [0, 0.255, 0.325], materials.accentDark, "bucket-hat-band");
+  } else if (preset.style === "pixie") {
+    const locks = [
+      [-0.19, 0.27, 0.1, -0.34],
+      [-0.05, 0.33, 0.11, -0.12],
+      [0.09, 0.32, 0.08, 0.16],
+      [0.21, 0.25, 0.055, 0.38],
+    ];
+    locks.forEach(([x, y, z, tilt], index) => addMesh(
+      head,
+      new THREE.ConeGeometry(0.075, 0.22 - index * 0.012, 5),
+      materials.hair,
+      `pixie-lock-${index + 1}`,
+      [x, y, z],
+      [0, 0, tilt],
+    ));
+    addSphere(head, 0.075, [-0.285, 0.04, 0.08], materials.hair, "pixie-sideburn", [0.48, 1.15, 0.45], 0);
+  } else if (preset.style === "short-locs") {
+    const locs = [
+      [-0.25, 0.2, 0.02, -0.32], [-0.13, 0.32, 0.02, -0.16], [0, 0.35, 0.015, 0],
+      [0.13, 0.32, 0.02, 0.16], [0.25, 0.2, 0.02, 0.32], [-0.29, 0.08, -0.04, -0.2], [0.29, 0.08, -0.04, 0.2],
+    ];
+    locs.forEach(([x, y, z, tilt], index) => addCylinder(
+      head,
+      [0.042, 0.052],
+      0.18,
+      [x, y, z],
+      materials.hair,
+      `short-loc-${index + 1}`,
+      6,
+      [0, 0, tilt],
+    ));
+  } else if (preset.style === "puffs") {
+    addSphere(head, 0.17, [-0.29, 0.265, -0.04], materials.hair, "left-hair-puff", [1.03, 1.08, 0.98], 0);
+    addSphere(head, 0.17, [0.29, 0.265, -0.04], materials.hair, "right-hair-puff", [1.03, 1.08, 0.98], 0);
+    addCylinder(head, [0.025, 0.025], 0.1, [-0.24, 0.185, -0.035], materials.accent, "left-puff-tie", 6, [0, 0, -0.5]);
+    addCylinder(head, [0.025, 0.025], 0.1, [0.24, 0.185, -0.035], materials.accent, "right-puff-tie", 6, [0, 0, 0.5]);
   } else {
     addSphere(head, 0.14, [-0.12, -0.03, -0.34], materials.hair, "ponytail-top", [0.85, 1.2, 0.8], 0);
     addSphere(head, 0.13, [-0.16, -0.24, -0.37], materials.hair, "ponytail-tip", [0.72, 1.35, 0.72], 0);
@@ -289,6 +376,71 @@ function addOutfitDetails(motion, upperBody, materials, preset) {
     addBox(upperBody, [0.075, 0.5, 0.045], [-0.17, 0.69, 0.302], materials.accentDark, "left-overall-strap", [0, 0, -0.14]);
     addBox(upperBody, [0.075, 0.5, 0.045], [0.17, 0.69, 0.302], materials.accentDark, "right-overall-strap", [0, 0, 0.14]);
     addBox(upperBody, [0.2, 0.1, 0.035], [0, 0.32, 0.35], materials.outfitDark, "overall-pocket");
+  } else if (preset.outfit === "hoodie") {
+    addMesh(
+      upperBody,
+      new THREE.TorusGeometry(0.29, 0.075, 6, 14),
+      materials.outfitDark,
+      "hood",
+      [0, 0.84, -0.16],
+      null,
+      [1.04, 1.15, 0.7],
+    );
+    addBox(upperBody, [0.38, 0.17, 0.06], [0, 0.29, 0.327], materials.outfitDark, "hoodie-pocket");
+    [-0.075, 0.075].forEach((x, index) => {
+      addCylinder(upperBody, [0.012, 0.012], 0.25, [x, 0.69, 0.328], materials.accent, `${index ? "right" : "left"}-hoodie-drawstring`, 6);
+      addSphere(upperBody, 0.022, [x, 0.56, 0.329], materials.accentDark, `${index ? "right" : "left"}-drawstring-tip`, null, 0);
+    });
+  } else if (preset.outfit === "jumpsuit") {
+    addBox(upperBody, [0.045, 0.63, 0.045], [0, 0.5, 0.337], materials.accentDark, "jumpsuit-zipper");
+    addBox(upperBody, [0.58, 0.09, 0.06], [0, 0.22, 0.305], materials.accent, "jumpsuit-belt");
+    [-0.15, 0.15].forEach((x, index) => {
+      addBox(upperBody, [0.19, 0.15, 0.045], [x, 0.59, 0.327], materials.outfitDark, `${index ? "right" : "left"}-jumpsuit-pocket`);
+      addSphere(upperBody, 0.025, [x, 0.59, 0.355], materials.accent, `${index ? "right" : "left"}-pocket-snap`, null, 0);
+    });
+  } else if (preset.outfit === "utility-vest") {
+    addBox(upperBody, [0.22, 0.67, 0.07], [-0.135, 0.48, 0.315], materials.accent, "left-utility-vest-panel", [0, 0, -0.025]);
+    addBox(upperBody, [0.22, 0.67, 0.07], [0.135, 0.48, 0.315], materials.accent, "right-utility-vest-panel", [0, 0, 0.025]);
+    [-0.145, 0.145].forEach((x, index) => {
+      addBox(upperBody, [0.19, 0.17, 0.055], [x, 0.35, 0.367], materials.accentDark, `${index ? "right" : "left"}-utility-pocket`);
+    });
+    addBox(upperBody, [0.055, 0.59, 0.03], [0, 0.46, 0.37], materials.outfitDark, "utility-vest-opening");
+  } else if (preset.outfit === "raincoat") {
+    addCylinder(motion, [0.32, 0.42], 0.74, [0, 1.38, 0], materials.outfit, "raincoat-skirt", 10);
+    addMesh(
+      upperBody,
+      new THREE.TorusGeometry(0.245, 0.055, 6, 14, Math.PI * 1.35),
+      materials.accent,
+      "raincoat-collar",
+      [0, 0.82, 0.13],
+      [0, 0, -Math.PI * 0.18],
+      [1.25, 1, 1],
+    );
+    [1.2, 1.4, 1.6].forEach((y, index) => addSphere(motion, 0.034, [0, y, 0.365], materials.accentDark, `raincoat-toggle-${index + 1}`, null, 0));
+  } else if (preset.outfit === "sweater-vest") {
+    addCylinder(upperBody, [0.305, 0.265], 0.6, [0, 0.47, 0], materials.accent, "sweater-vest", 10);
+    addBox(upperBody, [0.075, 0.34, 0.045], [-0.085, 0.71, 0.296], materials.outfitDark, "left-v-neck", [0, 0, 0.5]);
+    addBox(upperBody, [0.075, 0.34, 0.045], [0.085, 0.71, 0.296], materials.outfitDark, "right-v-neck", [0, 0, -0.5]);
+    addBox(upperBody, [0.53, 0.065, 0.025], [0, 0.17, 0.29], materials.accentDark, "sweater-vest-hem");
+  } else if (preset.outfit === "smock") {
+    addCylinder(motion, [0.32, 0.45], 0.7, [0, 1.35, 0], materials.outfit, "artist-smock", 10);
+    [-0.23, 0.23].forEach((x, index) => addBox(
+      motion,
+      [0.22, 0.18, 0.055],
+      [x, 1.24, 0.35],
+      materials.accentDark,
+      `${index ? "right" : "left"}-smock-pocket`,
+      [0, 0, index ? -0.06 : 0.06],
+    ));
+    addMesh(
+      upperBody,
+      new THREE.TorusGeometry(0.18, 0.038, 6, 14),
+      materials.accent,
+      "smock-neckerchief",
+      [0, 0.88, 0.015],
+      [Math.PI / 2, 0, 0],
+      [1.25, 1, 1],
+    );
   } else {
     [-0.15, 0, 0.15].forEach((y, index) => addSphere(upperBody, 0.03, [0, 0.46 + y, 0.335], materials.accent, `cardigan-button-${index + 1}`, null, 0));
     addBox(upperBody, [0.055, 0.64, 0.045], [0, 0.5, 0.31], materials.outfitDark, "cardigan-opening");
@@ -348,6 +500,7 @@ export function createCharacter3D(person = {}, seed = 0) {
     skin: standard(skinColor),
     skinShade: standard(shifted(skinColor, 0, 0.01, -0.06)),
     cheek: standard(shifted(skinColor, -0.01, 0.075, 0.035)),
+    freckle: standard(shifted(skinColor, 0.015, 0.035, -0.18)),
     hair: standard(shifted(hairColor, 0, -0.025, 0.025)),
     outfit: standard(outfitColor),
     outfitDark: standard(shifted(outfitColor, 0, -0.03, -0.15)),
@@ -389,7 +542,8 @@ export function createCharacter3D(person = {}, seed = 0) {
   model.name = "character-scale";
   const heightJitter = (rng() - 0.5) * 0.012;
   const heightScale = clamp(preset.height + heightJitter, 0.94, 1);
-  model.scale.setScalar(heightScale);
+  const widthScale = clamp(preset.width || 1, 0.92, 1.08);
+  model.scale.set(heightScale * widthScale, heightScale, heightScale * widthScale);
   root.add(model);
 
   const motion = new THREE.Group();
