@@ -822,11 +822,16 @@ document.addEventListener("DOMContentLoaded", () => {
   function stageCustomerCarry(plantObject) {
     const carry = run.customer?.userData?.rig?.carriedPlant;
     if (!carry || !plantObject) return;
-    const model = plantObject.clone(true);
+    const liveLeaves = plantObject.userData.leaves;
+    delete plantObject.userData.leaves;
+    let model;
+    try {
+      model = plantObject.clone(true);
+    } finally {
+      plantObject.userData.leaves = liveLeaves;
+    }
     model.traverse((child) => {
-      if (!child.userData) return;
-      delete child.userData.entity;
-      delete child.userData.plantId;
+      child.userData = {};
     });
     const modelTop = Math.max(plantObject.userData.modelTop || 1.4, 0.8);
     model.position.set(0, 0, 0);
@@ -1084,7 +1089,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (run.selectionRing) run.selectionRing.visible = false;
     document.body.dataset.selection = "none";
     if (run.customer) run.customer.userData.entity = null;
-    run.customerTween = { mode: "exit", time: 0, delay: reduceMotion ? 0 : 0.58 };
+    run.customerTween = {
+      mode: "exit",
+      time: 0,
+      delay: reduceMotion ? 0 : 0.58,
+      advance: state.customerIndex >= 3 ? "report" : "customer",
+    };
     run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
     sound("sale");
@@ -1092,11 +1102,6 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
-    const delay = reduceMotion ? 180 : 2850;
-    setTimeout(() => {
-      if (state.customerIndex >= 3) showReport();
-      else spawnCustomer(true);
-    }, delay);
   }
 
   function moonMoth() {
@@ -1277,11 +1282,12 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.soundButton.title = state.sound ? "Mute sound" : "Turn sound on";
     }
     const person = currentCustomer();
+    const saleTransition = saleMessage || run.customerTween?.mode === "exit";
     if (ui.customerCard) {
-      ui.customerCard.hidden = !person || saleMessage;
-      ui.customerCard.classList.toggle("is-waiting", Boolean(person && !saleMessage));
+      ui.customerCard.hidden = !person || saleTransition;
+      ui.customerCard.classList.toggle("is-waiting", Boolean(person && !saleTransition));
     }
-    if (person && !saleMessage) {
+    if (person && !saleTransition) {
       if (ui.customerName) ui.customerName.textContent = person.name;
       if (ui.customerRequest) ui.customerRequest.textContent = `“${person.line}” ${person.need} required · ${person.bonusTrait} + ${carePastTense(person.careWish)} + thriving bonus.`;
       if (ui.customerAvatar) {
@@ -1322,7 +1328,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (selected?.kind === "slot") {
       action = "An empty display spot";
     }
-    if (saleMessage) {
+    if (saleTransition) {
       title = run.lastSaleGrade === "perfect" ? "A perfect match" : run.lastSaleGrade === "lovely" ? "A lovely match" : "A good match";
       copy = "Wrapping the pot in yesterday’s newspaper…";
     }
@@ -1775,6 +1781,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (tween.mode === "exit") {
         unregister(run.customer);
         run.customer = null;
+        run.customerTween = null;
+        if (tween.advance === "report") showReport();
+        else spawnCustomer(true);
+        return;
       } else {
         run.busy = false;
       }
