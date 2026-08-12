@@ -1,6 +1,6 @@
 import { INVENTORY_CAPACITY, SLOT_DATA, SPECIES } from "./game-data.js";
 
-export const CARE_BENCH_STATE_VERSION = 1;
+export const CARE_BENCH_STATE_VERSION = 2;
 export const CARE_BENCH_BASE_SLOTS = 1;
 
 export const BENCH_JOB_TYPES = Object.freeze({
@@ -26,6 +26,9 @@ export const REHABILITATE_HYDRATION = 88;
 export const REHABILITATE_PROTECTION_DAYS = 2;
 export const PROPAGATION_PRICE_MULTIPLIER = 0.65;
 export const PROPAGATION_MATURITY_DAYS = 3;
+export const GROW_LAMP_REPOT_VALUE_BONUS = 2;
+export const GROW_LAMP_REHABILITATE_PROTECTION_DAYS = 1;
+export const GROW_LAMP_PROPAGATION_MATURITY_DAYS = 2;
 
 const VALID_JOB_TYPES = new Set(Object.values(BENCH_JOB_TYPES));
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
@@ -107,6 +110,7 @@ function normalizedJob(job, index) {
     startDay,
     readyDay,
     previousSlot: Number.isInteger(job.previousSlot) ? job.previousSlot : null,
+    lampAssisted: job?.lampAssisted === true,
     cost: normalizedCost(type, job.cost),
   };
 }
@@ -162,6 +166,7 @@ function benchStatusForJob(job) {
     type: job.type,
     status: job.status,
     readyDay: job.readyDay,
+    lampAssisted: job.lampAssisted === true,
   };
 }
 
@@ -244,6 +249,7 @@ export function validateBenchJob({
   day = 1,
   capacity = INVENTORY_CAPACITY,
   condition,
+  lampAssisted = false,
 } = {}) {
   const bench = migrateBenchState(benchState);
   const nextInventory = cloneInventory(inventory);
@@ -332,6 +338,7 @@ export function validateBenchJob({
     bloom: safeBloom,
     day: safeDay(day),
     capacity: safeCapacity(capacity),
+    lampAssisted: lampAssisted === true,
   };
 }
 
@@ -353,7 +360,7 @@ export function startBenchJob(options = {}) {
   const validation = validateBenchJob(options);
   if (!validation.ok) return validation;
 
-  const { type, plantId, plantIndex, cost, day } = validation;
+  const { type, plantId, plantIndex, cost, day, lampAssisted } = validation;
   const identity = nextJobIdentity(validation.benchState, type);
   const sourcePlant = validation.inventory[plantIndex];
   const job = {
@@ -364,6 +371,7 @@ export function startBenchJob(options = {}) {
     startDay: day,
     readyDay: day + BENCH_JOB_DURATIONS[type],
     previousSlot: Number.isInteger(sourcePlant.slot) ? sourcePlant.slot : null,
+    lampAssisted,
     cost: { ...cost },
   };
   const inventory = [...validation.inventory];
@@ -474,7 +482,9 @@ function propagatedChild(parent, job, day) {
     supplierLot: "propagation",
     priceBand: "fair",
     lifeStage: "juvenile",
-    maturityDaysRemaining: PROPAGATION_MATURITY_DAYS,
+    maturityDaysRemaining: job.lampAssisted
+      ? GROW_LAMP_PROPAGATION_MATURITY_DAYS
+      : PROPAGATION_MATURITY_DAYS,
     rootComfort: "comfortable",
     pot: "propagation-pot",
     soil: "propagation-mix",
@@ -549,26 +559,33 @@ export function applyCompletedBenchJobs({
       const child = existingChild || propagatedChild(parent, job, currentDay);
       if (!existingChild) nextInventory.push(child);
       appliedJobs.push({ ...job, childId: child.id });
-      messages.push(`${parent.species || "The plant"} made a new juvenile plant.`);
+      messages.push(job.lampAssisted
+        ? `${parent.species || "The plant"} made a new juvenile plant. The grow lamp shortened its growth time to two mornings.`
+        : `${parent.species || "The plant"} made a new juvenile plant.`);
       return;
     }
 
     if (job.type === BENCH_JOB_TYPES.REPOT) {
+      const valueBonus = REPOT_VALUE_BONUS + (job.lampAssisted ? GROW_LAMP_REPOT_VALUE_BONUS : 0);
       nextInventory[plantIndex] = {
         ...completedPlantBase(plant, currentDay),
         acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
-        price: safeInteger(plant.price, 0) + REPOT_VALUE_BONUS,
-        repotValueBonus: safeInteger(plant.repotValueBonus, 0) + REPOT_VALUE_BONUS,
+        price: safeInteger(plant.price, 0) + valueBonus,
+        repotValueBonus: safeInteger(plant.repotValueBonus, 0) + valueBonus,
         rootComfort: "comfortable",
         rootAgeDays: 0,
         pot: "fresh-terracotta",
         repottedDay: currentDay,
       };
       appliedJobs.push(job);
-      messages.push(`${plant.species || "The plant"} has comfortable roots and more value.`);
+      messages.push(job.lampAssisted
+        ? `${plant.species || "The plant"} has comfortable roots and more value. The grow lamp added 2 more coins of value.`
+        : `${plant.species || "The plant"} has comfortable roots and more value.`);
       return;
     }
 
+    const protectionDays = REHABILITATE_PROTECTION_DAYS
+      + (job.lampAssisted ? GROW_LAMP_REHABILITATE_PROTECTION_DAYS : 0);
     nextInventory[plantIndex] = {
       ...completedPlantBase(plant, currentDay),
       acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
@@ -577,10 +594,12 @@ export function applyCompletedBenchJobs({
       needsRehabilitation: false,
       recoveredToday: true,
       rehabilitatedDay: currentDay,
-      conditionProtectionUntilDay: currentDay + REHABILITATE_PROTECTION_DAYS - 1,
+      conditionProtectionUntilDay: currentDay + protectionDays - 1,
     };
     appliedJobs.push(job);
-    messages.push(`${plant.species || "The plant"} is healthy and protected.`);
+    messages.push(job.lampAssisted
+      ? `${plant.species || "The plant"} is healthy and protected. The grow lamp added one protection day.`
+      : `${plant.species || "The plant"} is healthy and protected.`);
   });
 
   return {

@@ -505,7 +505,10 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(3.15, 1.12, -2.45),
     new THREE.Vector3(3.95, 1.12, -2.45),
     new THREE.Vector3(4.75, 1.12, -2.45),
+  ];
+  const benchJobStaging = [
     new THREE.Vector3(3.95, 1.12, -3.35),
+    new THREE.Vector3(3.95, 2.5, -3.86),
   ];
   const rackStaging = [
     new THREE.Vector3(4.55, 0.17, -0.66),
@@ -520,12 +523,12 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(-3.65, 0.03, 1.25),
     new THREE.Vector3(3.42, 0.03, -0.55),
     new THREE.Vector3(2.6, 0.03, -0.1),
-    new THREE.Vector3(-4.75, 0.03, -2.15),
+    new THREE.Vector3(-1.1, 0.03, -0.35),
     new THREE.Vector3(-2.65, 0.03, -1.65),
     new THREE.Vector3(-0.25, 0.03, -1.7),
     new THREE.Vector3(-1.55, 0.03, 3.8),
     new THREE.Vector3(-3.35, 0.03, 3.85),
-    new THREE.Vector3(-5.0, 0.03, -0.55),
+    new THREE.Vector3(-0.8, 0.03, 1.25),
   ];
 
   const run = {
@@ -558,8 +561,11 @@ document.addEventListener("DOMContentLoaded", () => {
     conditionSaveTimer: 0,
     conditionDirty: false,
     lastSaleGrade: "good",
+    lastPlantId: null,
     benchPlantId: null,
     benchMessage: "Choose a plant, then choose one available job.",
+    wateringCan: null,
+    canAnimation: null,
   };
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -776,6 +782,20 @@ document.addEventListener("DOMContentLoaded", () => {
     return object;
   }
 
+  function registerStation(root, {
+    id,
+    label,
+    ringScale = 1,
+    selectionAnchor = new THREE.Vector3(),
+  }) {
+    root.userData.entity = { kind: "station", id };
+    root.userData.stationLabel = label;
+    root.userData.ringScale = ringScale;
+    root.userData.selectionAnchor = selectionAnchor;
+    if (!interactive.includes(root)) interactive.push(root);
+    return root;
+  }
+
   function buildShop(textures) {
     const floorMat = material(0xb97758, { map: textures.floor });
     const wallMat = material(0xe7dfc5, { map: textures.wall });
@@ -822,8 +842,21 @@ document.addEventListener("DOMContentLoaded", () => {
     box(world, [0.15, 3.3, 0.72], [-3.75, 1.65, -4.38], darkWood);
 
     // Potting bench and counter.
-    box(world, [2.4, 0.18, 2.1], [3.9, 1.02, -3.05], woodMat);
-    [[3, -3.85], [4.8, -3.85], [3, -2.25], [4.8, -2.25]].forEach(([x, z]) => box(world, [0.16, 1.05, 0.16], [x, 0.52, z], darkWood));
+    const careBench = new THREE.Group();
+    box(careBench, [2.4, 0.18, 2.1], [0, 1.02, 0], woodMat);
+    [[-0.9, -0.8], [0.9, -0.8], [-0.9, 0.8], [0.9, 0.8]].forEach(([x, z]) => {
+      box(careBench, [0.16, 1.05, 0.16], [x, 0.52, z], darkWood);
+    });
+    box(careBench, [2.05, 0.48, 0.12], [0, 0.72, 0.98], darkWood);
+    careBench.position.set(3.9, 0, -3.05);
+    careBench.name = "care-bench-station";
+    registerStation(careBench, {
+      id: "care-bench",
+      label: "Care Bench",
+      ringScale: 1.55,
+      selectionAnchor: new THREE.Vector3(0, 1.04, 0),
+    });
+    world.add(careBench);
     box(world, [2.7, 1.25, 1.0], [2.35, 0.64, 1.25], woodMat);
     box(world, [2.9, 0.16, 1.18], [2.35, 1.3, 1.25], cream);
     box(world, [0.75, 0.55, 0.08], [2.35, 0.75, 1.77], peach);
@@ -844,7 +877,17 @@ document.addEventListener("DOMContentLoaded", () => {
     spout.rotation.z = -Math.PI / 2.8;
     wateringCan.position.set(3.15, 1.13, -3.45);
     wateringCan.scale.setScalar(0.8);
+    wateringCan.name = "watering-can-station";
+    wateringCan.userData.homePosition = wateringCan.position.clone();
+    wateringCan.userData.homeQuaternion = wateringCan.quaternion.clone();
+    registerStation(wateringCan, {
+      id: "watering-can",
+      label: "Watering Can",
+      ringScale: 0.72,
+      selectionAnchor: new THREE.Vector3(0, 0, 0),
+    });
     world.add(wateringCan);
+    run.wateringCan = wateringCan;
 
     makeSlots();
     makeCrates();
@@ -984,9 +1027,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const bulb = new THREE.PointLight(0xffd98a, 4.5, 7, 2);
     bulb.position.set(-2.45, 2.92, 0);
     root.add(bulb);
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 12, 8),
+      material(0xffd98a, { emissive: 0xffc75f, emissiveIntensity: 1.8, roughness: 0.25 }),
+    );
+    glow.position.copy(bulb.position);
+    root.add(glow);
     root.position.set(5.55, 0, -3.2);
     root.visible = Boolean(state.upgrades.growLamp);
     root.name = "grow-lamp";
+    root.userData.bulb = bulb;
+    root.userData.glow = glow;
+    registerStation(root, {
+      id: "grow-lamp",
+      label: "Grow Lamp",
+      ringScale: 1.05,
+      selectionAnchor: new THREE.Vector3(-2.45, 0, 0),
+    });
     world.add(root);
   }
 
@@ -1044,11 +1101,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const expansionVisible = (id) => hasExpansion(id);
 
     const shelves = new THREE.Group();
-    [[0.82, 0.9], [2, 2.08]].forEach(([boardY, lipY]) => {
-      box(shelves, [0.86, 0.16, 1.85], [5.43, boardY, 1.43], woodMat);
-      box(shelves, [0.1, 0.12, 1.95], [5.79, lipY, 1.43], darkWood);
+    [[1.03, 0.9], [2.46, 2.33]].forEach(([boardY, apronY]) => {
+      box(shelves, [1.12, 0.18, 3.65], [-5.37, boardY, -2.1], woodMat);
+      box(shelves, [0.12, 0.26, 3.65], [-4.86, apronY, -2.1], darkWood);
     });
-    [[5.08, 0.55], [5.08, 2.3], [5.78, 0.55], [5.78, 2.3]].forEach(([x, z]) => {
+    [[-5.75, -3.8], [-5.75, -0.4], [-4.99, -3.8], [-4.99, -0.4]].forEach(([x, z]) => {
       box(shelves, [0.11, 2.2, 0.11], [x, 1.1, z], darkWood);
     });
     shelves.name = "expansion-display-shelves";
@@ -1144,7 +1201,7 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(garland);
 
     const board = new THREE.Group();
-    board.position.set(-5.86, 3.2, -1.45);
+    board.position.set(-5.86, 5.08, -2.1);
     box(board, [0.09, 1.08, 1.75], [0, 0, 0], material(0xd6b47d));
     for (let index = 0; index < 5; index += 1) {
       box(board, [0.02, 0.25, 0.35], [0.06, 0.25 - (index % 2) * 0.42, -0.37 + Math.floor(index / 2) * 0.42], material([0xd98f6d, 0xe9dfba, 0xa4b995][index % 3]), [index % 2 ? 0.08 : -0.06, 0, 0]);
@@ -1310,9 +1367,17 @@ document.addEventListener("DOMContentLoaded", () => {
     plantObjects.forEach((object) => unregister(object));
     plantObjects.clear();
     let loose = 0;
+    let benchJob = 0;
     state.inventory.forEach((plant) => {
       const object = createPlant(plant);
-      if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
+      if (plant.benchStatus) {
+        const position = benchJobStaging[Math.min(benchJob, benchJobStaging.length - 1)];
+        object.position.copy(position);
+        object.scale.setScalar(benchJob === 0
+          ? Math.min(object.userData.looseScale || 0.78, 0.7)
+          : Math.min(object.userData.looseScale || 0.78, 0.55));
+        benchJob += 1;
+      } else if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
         const slot = SLOT_DATA[plant.slot];
         object.position.set(slot.x, slot.y, slot.z);
       } else {
@@ -1771,6 +1836,13 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   };
 
+  function benchJobCopy(type) {
+    if (!state.upgrades.growLamp) return benchJobInfo[type].copy;
+    if (type === BENCH_JOB_TYPES.REPOT) return "Fresh soil, comfortable roots, and +6 base value with lamp support.";
+    if (type === BENCH_JOB_TYPES.REHABILITATE) return "Restore a stressed plant and protect it for three days with lamp support.";
+    return "Create one juvenile cutting. Lamp support helps it mature in two mornings.";
+  }
+
   function benchValidation(type, plant) {
     if (state.phase !== "preparation" && state.phase !== "supply") {
       return { ok: false, message: "Start bench work during morning preparation." };
@@ -1798,6 +1870,7 @@ document.addEventListener("DOMContentLoaded", () => {
       day: state.day,
       capacity: state.inventoryCapacity,
       condition: plant ? conditionOf(plant).label : null,
+      lampAssisted: state.upgrades.growLamp,
     });
     if (!result.ok) return result;
     const preview = startBenchJob({
@@ -1810,6 +1883,7 @@ document.addEventListener("DOMContentLoaded", () => {
       day: state.day,
       capacity: state.inventoryCapacity,
       condition: conditionOf(plant).label,
+      lampAssisted: state.upgrades.growLamp,
     });
     if (preview.ok && !inventoryCoversCustomers(preview.inventory, state.customers.slice(state.customerIndex))) {
       return {
@@ -1844,7 +1918,10 @@ document.addEventListener("DOMContentLoaded", () => {
           : "View active jobs now. New jobs start during tomorrow’s preparation.";
     if (ui.benchSummary) {
       const reserve = reservedShopCoins();
-      ui.benchSummary.textContent = `${phaseGuidance} ${jobs.length}/${state.benchState.slotCount} bench slots are in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""}`;
+      const lampCopy = state.upgrades.growLamp
+        ? " Grow lamp support is on: more Repot value, longer Rehabilitate protection, and faster Propagate growth."
+        : "";
+      ui.benchSummary.textContent = `${phaseGuidance} ${jobs.length}/${state.benchState.slotCount} bench slots are in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""}${lampCopy}`;
     }
     if (ui.benchStatus) {
       ui.benchStatus.textContent = canStartJobs ? run.benchMessage : phaseGuidance;
@@ -1893,7 +1970,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const plant = state.inventory.find((item) => item.id === job.plantId);
       name.textContent = `${benchJobInfo[job.type]?.name || "Bench job"} · ${plant?.species || "Plant"}`;
       const detail = document.createElement("small");
-      detail.textContent = job.status === "ready" ? "Ready. Waiting for stock space." : `Finishes on Day ${job.readyDay}.`;
+      const lampCopy = job.lampAssisted ? " Grow lamp assisted." : "";
+      detail.textContent = job.status === "ready" ? `Ready. Waiting for stock space.${lampCopy}` : `Finishes on Day ${job.readyDay}.${lampCopy}`;
       card.append(name, detail);
       ui.benchActions.append(card);
     });
@@ -1906,11 +1984,12 @@ document.addEventListener("DOMContentLoaded", () => {
       button.type = "button";
       button.className = "bench-job";
       button.setAttribute("aria-disabled", String(!validation.ok));
-      button.title = validation.ok ? info.copy : validation.message;
+      const jobCopy = benchJobCopy(type);
+      button.title = validation.ok ? jobCopy : validation.message;
       const name = document.createElement("strong");
       name.textContent = info.name;
       const detail = document.createElement("small");
-      detail.textContent = `${cost.coins} coins${cost.bloom ? ` + ${cost.bloom} Bloom` : ""} · ${duration} ${duration === 1 ? "morning" : "mornings"}. ${validation.ok ? info.copy : validation.message}`;
+      detail.textContent = `${cost.coins} coins${cost.bloom ? ` + ${cost.bloom} Bloom` : ""} · ${duration} ${duration === 1 ? "morning" : "mornings"}. ${validation.ok ? jobCopy : validation.message}`;
       button.append(name, detail);
       button.addEventListener("click", () => {
         if (!validation.ok) {
@@ -1944,6 +2023,7 @@ document.addEventListener("DOMContentLoaded", () => {
       day: state.day,
       capacity: state.inventoryCapacity,
       condition: conditionOf(plant).label,
+      lampAssisted: state.upgrades.growLamp,
     });
     if (!result.ok) {
       run.benchMessage = result.message;
@@ -1976,8 +2056,8 @@ document.addEventListener("DOMContentLoaded", () => {
         key: "growLamp",
         title: "Secondhand grow lamp",
         ownedTitle: "Grow lamp installed",
-        copy: "Mists humidity-loving display plants each morning.",
-        ownedCopy: "Its honey light handles the morning mist.",
+        copy: "Improves every new Care Bench job: more Repot value, longer Rehabilitate protection, and faster Propagate growth.",
+        ownedCopy: "Its honey light now supports every new Care Bench job.",
         coins: 50,
         bloom: 10,
         objectName: "grow-lamp",
@@ -2346,6 +2426,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.dataset.selection = entity.kind;
     if (entity.kind === "plant") {
       const plant = state.inventory.find((item) => item.id === entity.id);
+      if (plant && !plant.benchStatus) run.lastPlantId = plant.id;
       const comparingSwap = run.carried && run.carried !== plant?.id && (run.arranging || state.phase === "preparation");
       if (!comparingSwap) {
         run.carried = plant && !Number.isInteger(plant.slot) ? plant.id : null;
@@ -2368,9 +2449,35 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     ring.visible = true;
-    ring.position.set(object.position.x, object.position.y + 0.025, object.position.z);
+    const anchor = object.userData.selectionAnchor?.clone?.() || new THREE.Vector3();
+    if (object === run.wateringCan && run.canAnimation) {
+      anchor.add(run.canAnimation.homePosition);
+    } else {
+      object.localToWorld(anchor);
+    }
+    ring.position.set(anchor.x, anchor.y + 0.025, anchor.z);
     const pulse = run.selected.kind === "customer" ? 1.15 : 1;
-    ring.scale.setScalar(pulse);
+    ring.scale.setScalar((object.userData.ringScale || 1) * pulse);
+  }
+
+  function stationTargetPlant() {
+    const plant = state.inventory.find((item) => item.id === run.lastPlantId);
+    return plant && !plant.benchStatus ? plant : null;
+  }
+
+  function openCareBenchFromRoom() {
+    canvas.focus({ preventScroll: true });
+    openModal(ui.benchModal, true);
+  }
+
+  function useWateringCan() {
+    const plant = stationTargetPlant();
+    if (!plant) {
+      sound("hint");
+      toast("Choose a plant first. Then return to the watering can.");
+      return;
+    }
+    careForPlant("water", plant.id);
   }
 
   function doAction() {
@@ -2403,6 +2510,9 @@ document.addEventListener("DOMContentLoaded", () => {
       sound("hint");
     } else if (kind === "slot" && run.carried) {
       placePlant(run.carried, id);
+    } else if (kind === "station") {
+      if (id === "watering-can") useWateringCan();
+      else if (id === "care-bench" || id === "grow-lamp") openCareBenchFromRoom();
     }
   }
 
@@ -2747,13 +2857,74 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
-  function careForPlant(type) {
-    if (run.busy || run.selected?.kind !== "plant") {
+  function animateWateringCan(plantObject) {
+    const can = run.wateringCan;
+    if (!can || !can.visible || !plantObject?.parent) {
+      waterPour(plantObject);
+      return;
+    }
+    if (reduceMotion) {
+      waterPour(plantObject);
+      return;
+    }
+    const plantPosition = new THREE.Vector3();
+    plantObject.getWorldPosition(plantPosition);
+    const plantHeight = Math.max(0.75, (plantObject.userData.modelTop || 1.4) * plantObject.scale.x * 0.62);
+    const targetPosition = plantPosition.clone().add(new THREE.Vector3(-0.62, plantHeight, 0.12));
+    const targetQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.66));
+    run.canAnimation = {
+      age: 0,
+      duration: 1.18,
+      object: can,
+      plantObject,
+      homePosition: can.userData.homePosition.clone(),
+      homeQuaternion: can.userData.homeQuaternion.clone(),
+      targetPosition,
+      targetQuaternion,
+      poured: false,
+    };
+  }
+
+  function updateWateringCan(dt) {
+    const animation = run.canAnimation;
+    if (!animation) return;
+    animation.age += dt;
+    const raw = clamp(animation.age / animation.duration, 0, 1);
+    const ease = (value) => value * value * (3 - 2 * value);
+    if (raw < 0.34) {
+      const travel = ease(raw / 0.34);
+      animation.object.position.lerpVectors(animation.homePosition, animation.targetPosition, travel);
+      animation.object.quaternion.slerpQuaternions(animation.homeQuaternion, animation.targetQuaternion, travel);
+    } else if (raw < 0.66) {
+      animation.object.position.copy(animation.targetPosition);
+      animation.object.quaternion.copy(animation.targetQuaternion);
+    } else {
+      const travel = ease((raw - 0.66) / 0.34);
+      animation.object.position.lerpVectors(animation.targetPosition, animation.homePosition, travel);
+      animation.object.quaternion.slerpQuaternions(animation.targetQuaternion, animation.homeQuaternion, travel);
+    }
+    if (!animation.poured && raw >= 0.47) {
+      animation.poured = true;
+      if (animation.plantObject?.parent) waterPour(animation.plantObject);
+    }
+    if (raw >= 1) {
+      animation.object.position.copy(animation.homePosition);
+      animation.object.quaternion.copy(animation.homeQuaternion);
+      run.canAnimation = null;
+    }
+  }
+
+  function careForPlant(type, plantId = run.selected?.kind === "plant" ? run.selected.id : null) {
+    if (run.busy || !plantId) {
       toast("Choose a plant first.");
       return;
     }
-    const plant = state.inventory.find((item) => item.id === run.selected.id);
-    const object = plantObjects.get(run.selected.id);
+    if (type === "water" && run.canAnimation) {
+      toast("The watering can is already pouring.");
+      return;
+    }
+    const plant = state.inventory.find((item) => item.id === plantId);
+    const object = plantObjects.get(plantId);
     if (!plant || plant.benchStatus || !object) return;
     const spec = speciesOf(plant);
     const beneficial = spec.beneficialCare.includes(type);
@@ -2790,7 +2961,7 @@ document.addEventListener("DOMContentLoaded", () => {
         weeklyRewardCopy ||= advanceWeekGoal({ metric: "thirstRescues", value: 1 });
         recoveryReward = true;
       }
-      waterPour(object);
+      animateWateringCan(object);
     } else if (type === "mist") {
       mistCloud(object);
     } else {
@@ -2993,7 +3164,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const root = new THREE.Group();
     const size = object.scale.x;
     const target = object.position.clone().add(new THREE.Vector3(0, 0.67 * size, 0));
-    const origin = target.clone().add(new THREE.Vector3(0.78 * size, 1.65 * size, 0.28 * size));
+    const origin = target.clone().add(new THREE.Vector3(-0.34 * size, 1.42 * size, 0.18 * size));
     const bits = [];
     const geometry = new THREE.SphereGeometry(0.052, 7, 5);
     const mat = new THREE.MeshBasicMaterial({ color: 0x69b9df, transparent: true, opacity: 0.92, depthWrite: false });
@@ -3238,10 +3409,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ? benchMorning.message
       : "Choose a plant, then choose one available job.";
     state.inventory.forEach((plant) => {
-      const morningMist = Boolean(state.upgrades.growLamp
-        && Number.isInteger(plant.slot)
-        && speciesOf(plant).beneficialCare.includes("mist"));
-      plant.care = { water: false, mist: morningMist, prune: false };
+      plant.care = { water: false, mist: false, prune: false };
       plant.recoveredToday = plant.rehabilitatedDay === state.day;
       plant.thirstWarned = plant.hydration <= 34;
     });
@@ -3268,7 +3436,9 @@ document.addEventListener("DOMContentLoaded", () => {
       benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length ? benchMorning.message : "",
       maturedPlants.length ? `${maturedPlants.join(" and ")} ${maturedPlants.length === 1 ? "is" : "are"} mature and ready for sale.` : "",
       newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
-      state.upgrades.growLamp ? "The grow lamp handled the morning mist." : "",
+      state.upgrades.growLamp && state.benchState.jobs.some((job) => job.lampAssisted)
+        ? "The grow lamp is helping the active Care Bench work."
+        : "",
       "The nursery clipboard is ready.",
     ].filter(Boolean).join(" ");
     toast(morningNotes, morningNotes.length > 110 ? 5200 : 3100);
@@ -3450,6 +3620,32 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (selected?.kind === "slot") {
       action = run.carried ? "Place in this light" : "An empty display spot";
       disabled = !run.carried;
+    } else if (selected?.kind === "station") {
+      if (selected.id === "care-bench") {
+        const jobs = state.benchState?.jobs?.length || 0;
+        title = "Care Bench";
+        copy = jobs
+          ? `${jobs} active ${jobs === 1 ? "job is" : "jobs are"} using the bench. Open it to check the work or plan the next job.`
+          : "Repot root-bound stock, rehabilitate stressed plants, or propagate a thriving plant during morning preparation.";
+        action = "Open Care Bench";
+        disabled = false;
+      } else if (selected.id === "watering-can") {
+        const target = stationTargetPlant();
+        title = "Watering Can";
+        copy = target
+          ? `${target.species} is the current plant. Its soil is ${Math.round(target.hydration)}% hydrated.`
+          : "Choose a plant, then return here for a clear watering action.";
+        action = target ? `Water ${target.species}` : "Choose a plant first";
+        disabled = false;
+      } else if (selected.id === "grow-lamp") {
+        const assisted = state.benchState?.jobs?.filter((job) => job.lampAssisted).length || 0;
+        title = "Grow Lamp";
+        copy = assisted
+          ? `Honey light is helping ${assisted} active Care Bench ${assisted === 1 ? "job" : "jobs"}.`
+          : "New Care Bench jobs get more Repot value, longer Rehabilitate protection, or faster Propagate growth.";
+        action = "Open Care Bench";
+        disabled = false;
+      }
     }
     if (saleTransition) {
       title = run.lastSaleGrade === "perfect" ? "A perfect match" : run.lastSaleGrade === "lovely" ? "A lovely match" : "A good match";
@@ -3693,7 +3889,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const entity = object.userData.entity;
     selectEntity(entity, object);
     const plant = entity.kind === "plant" ? state.inventory.find((item) => item.id === entity.id) : null;
-    toast(plant ? `Selected ${plant.species}. Press E to act.` : `Selected ${entity.kind}. Press E to act.`, 1700);
+    const label = plant?.species || object.userData.stationLabel || (entity.kind === "crate" ? "cartons" : entity.kind);
+    toast(`Selected ${label}. Press E to act.`, 1700);
   }
 
   function ensureAudio() {
@@ -3786,11 +3983,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!reduceMotion && run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
     updateCartonOpening(dt);
     updateMovers(dt);
+    updateWateringCan(dt);
     updateEffects(dt);
+    updateGrowLamp(time);
     updateCustomer(dt, time);
     updateMoth(dt);
     updateSelectionRing();
     renderer.render(scene, camera);
+  }
+
+  function updateGrowLamp(time) {
+    const lamp = world.getObjectByName("grow-lamp");
+    if (!lamp?.visible) return;
+    const active = state.benchState?.jobs?.some((job) => job.lampAssisted && job.status !== "ready");
+    const pulse = active && !reduceMotion ? (Math.sin(time * 4.2) + 1) * 0.5 : 0;
+    if (lamp.userData.bulb) lamp.userData.bulb.intensity = active ? 5.2 + pulse * 1.8 : 2.3;
+    if (lamp.userData.glow) {
+      lamp.userData.glow.material.emissiveIntensity = active ? 2.2 + pulse * 1.5 : 1.25;
+      lamp.userData.glow.scale.setScalar(active ? 1 + pulse * 0.16 : 1);
+    }
   }
 
   function updatePlantCondition(dt) {

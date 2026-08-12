@@ -184,3 +184,14 @@
 - Checkout Bell, Ceramic Shop Sign, Scent Garden, and Wrapping Station add bounded sale bonuses. All percentage effects use the original tag price, do not compound, and the combined maximum stays at 15% plus 3 coins.
 - Updated `README.md` and `GAMEPLAY_PLAN.md` for the 20-plant catalog, 20-plant maximum capacity, visible Care Bench entry, rare supplier, and permanent growth branch.
 - Validation covers all existing trade, supplier, progression, Care Bench, shop-project, and expansion tests; rare supplier determinism, ordinary five-visitor coverage, and access; save and syntax checks; the visible one-carton and ready Care Bench states; and starting a live Rehabilitate job from the main task-panel entry.
+
+## 2026-08-12 — Working potting station and Community Board display
+
+- Moved the four-slot Display Shelves from the right side of the room to the left wall. They now join the original shelves as one L-shaped plant display. Existing saved plants keep their slot numbers and move safely with the fixture.
+- Moved the Community Board above the added shelves. Checked every one of the 20 plant models for wall, shelf, board, neighbor, and upper-shelf clearance. Moved two loose-stock positions away from the new fixture.
+- Made the physical Care Bench a selectable 3D work station. Its action opens the existing Repot, Rehabilitate, and Propagate dialog. Plants with active jobs now sit at the bench, and a second active plant uses the added bench shelf.
+- Made the physical watering can selectable. It remembers the last chosen plant, uses the same watering rules as the Water control and keyboard shortcut, flies to the plant, tilts, pours, and returns to the bench. Misting keeps its separate cloud animation.
+- Replaced the grow lamp’s hidden automatic mist rule with saved Care Bench support. New lamp-assisted Repot jobs add 2 extra coins of value. Rehabilitate adds one protection day. Propagate plants mature in two mornings instead of three.
+- Added a visible lamp bulb and pulse for active assisted jobs. The lamp is now selectable and opens the Care Bench. Upgrade, task-panel, job-card, help, README, and gameplay-plan text state the real effects.
+- Raised the care-bench substate to version 2. Old jobs migrate with lamp support off. Lamp support remains correct after save and reload.
+- Validation passed every existing `*.qa.mjs` suite, JavaScript syntax checks, and whitespace checks. Browser tests covered Q selection, the physical Care Bench dialog and focus path, a thirsty watering-can action from 57% to 100% soil hydration, visible grow-lamp purchase and guidance, and the shelf/Community Board room layout.

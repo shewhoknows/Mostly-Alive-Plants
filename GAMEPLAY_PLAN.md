@@ -84,7 +84,7 @@ Rules:
 - Correct care restores condition faster than neglect lowers it.
 - Misting and pruning are valuable only for relevant species, not universal chores.
 - Overwatering remains blocked instead of becoming a hidden punishment.
-- The grow lamp improves a shelf’s light level; a later humidifier handles automatic misting.
+- The grow lamp improves new Care Bench jobs. It adds Repot value, extends Rehabilitate protection, and speeds juvenile growth after Propagate. Misting stays a separate, visible care action.
 
 ### 3. Pricing and merchandising
 
@@ -130,7 +130,7 @@ Events create plans rather than punishments: sunny spell, apartment move-in week
 
 The current physical upgrades change what the player can do:
 
-- **Grow Lamp:** improves display light and automates useful mist care.
+- **Grow Lamp:** improves all new Care Bench jobs and pulses while it supports active work.
 - **Rain Barrel:** slows soil drying.
 - **Delivery Rack:** raises stock capacity from 12 to 16.
 - **Bench Shelf:** adds a second bench-job slot.

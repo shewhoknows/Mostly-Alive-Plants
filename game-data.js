@@ -991,10 +991,10 @@ export const SLOT_DATA = [
   { x: -1.3, y: 0.06, z: -2.85, size: 0.9, zone: "floor", zoneLabel: "open floor", lightLevel: "indirect" },
   { x: -3.7, y: 0.06, z: 0.2, size: 0.9, zone: "floor", zoneLabel: "open floor", lightLevel: "shade" },
   { x: 2.35, y: 1.4, z: 1.25, size: 0.72, zone: "counter", zoneLabel: "front counter", lightLevel: "indirect" },
-  { x: 5.43, y: 0.92, z: 1.2, size: 0.42, ceilingY: 1.98, zone: "sideShelfLower", zoneLabel: "new lower shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
-  { x: 5.43, y: 0.92, z: 1.95, size: 0.42, ceilingY: 1.98, zone: "sideShelfLower", zoneLabel: "new lower shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
-  { x: 5.43, y: 2.1, z: 1.2, size: 0.42, zone: "sideShelfUpper", zoneLabel: "new upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
-  { x: 5.43, y: 2.1, z: 1.95, size: 0.42, zone: "sideShelfUpper", zoneLabel: "new upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
+  { x: -5.15, y: 1.12, z: -2.9, size: 0.75, ceilingY: 2.37, zone: "communityShelfLower", zoneLabel: "community wall lower shelf", lightLevel: "shade", requiresExpansion: "display-shelves" },
+  { x: -5.15, y: 1.12, z: -1.3, size: 0.75, ceilingY: 2.37, zone: "communityShelfLower", zoneLabel: "community wall lower shelf", lightLevel: "shade", requiresExpansion: "display-shelves" },
+  { x: -5.15, y: 2.55, z: -2.9, size: 0.68, zone: "communityShelfUpper", zoneLabel: "community wall upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
+  { x: -5.15, y: 2.55, z: -1.3, size: 0.68, zone: "communityShelfUpper", zoneLabel: "community wall upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
 ];
 
 export const SUPPLIER_TYPES = [
