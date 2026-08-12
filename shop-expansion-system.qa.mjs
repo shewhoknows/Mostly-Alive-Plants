@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import {
   SHOP_EXPANSIONS,
   expansionForId,
+  expansionResaleValue,
   expansionUnlockedForWeek,
   migrateExpansionState,
   purchaseExpansion,
   saleExpansionBonus,
+  sellExpansion,
   validateExpansionPurchase,
 } from "./shop-expansion-system.js";
 
@@ -151,6 +153,23 @@ SHOP_EXPANSIONS.forEach((expansion) => {
   bloom = result.bloom;
 });
 assert.equal(allState.purchasedIds.length, 6);
+
+const resale = expansionResaleValue("display-shelves");
+assert.deepEqual(resale, { coins: 60, bloom: 0 });
+const sold = sellExpansion({
+  id: "display-shelves",
+  state: allState,
+  coins: 7,
+  bloom: 3,
+});
+assert.equal(sold.ok, true);
+assert.equal(sold.code, "sold");
+assert.equal(sold.state.purchased["display-shelves"], undefined);
+assert.equal(sold.state.purchasedIds.length, 5);
+assert.equal(sold.coins, 67);
+assert.equal(sold.bloom, 3);
+assert.equal(sellExpansion({ id: "display-shelves", state: sold.state }).code, "not-installed");
+assert.equal(sellExpansion({ id: "missing", state: allState }).code, "unknown-expansion");
 
 assert.equal(saleExpansionBonus({ state: empty, priceBand: "boutique", perfect: true, basePayout: 100 }), 0);
 assert.equal(saleExpansionBonus({

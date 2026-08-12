@@ -60,7 +60,7 @@ function plantSpecies(plant) {
 }
 
 function isAvailableForCustomers(plant) {
-  return plant && !plant.benchStatus && plant.lifeStage !== "juvenile";
+  return plant && !plant.benchStatus && !plant.held && plant.lifeStage !== "juvenile";
 }
 
 function minimumAskingPrice(plant, priceBand = "quick") {
@@ -219,38 +219,102 @@ function searchCoveringSpecies({
   if (!quantity) return maximumAssignedNeeds(availableInventory, requirements) === requirements.length ? [] : null;
 
   const orderedSpecies = deterministicSpeciesOrder(speciesPool, seedKey, type, "search");
-  const selectedSpecies = [];
-  const selectedPlants = [];
+  if (!orderedSpecies.length || (!allowDuplicates && quantity > orderedSpecies.length)) return null;
 
-  function visit(startIndex) {
-    const remainingSlots = quantity - selectedSpecies.length;
-    const currentPlants = [...availableInventory, ...selectedPlants];
-    const assigned = maximumAssignedNeeds(currentPlants, requirements);
-    if (assigned + remainingSlots < requirements.length) return null;
-    if (!remainingSlots) return assigned === requirements.length ? [...selectedSpecies] : null;
+  // A supplier lot never needs to cover more than the day's visitor queue.
+  // Represent that queue as a bit mask. Each plant can set one compatible bit,
+  // so distinct plants still represent distinct sales. This replaces the old
+  // combination DFS, whose work grew sharply as the species catalog expanded.
+  const stateCount = 2 ** requirements.length;
+  const fullMask = stateCount - 1;
 
-    const choices = [];
-    for (let index = startIndex; index < orderedSpecies.length; index += 1) {
-      const species = orderedSpecies[index];
-      const preview = virtualPlants([species])[0];
-      const gain = maximumAssignedNeeds([...currentPlants, preview], requirements) - assigned;
-      choices.push({ index, species, preview, gain });
-    }
-    choices.sort((left, right) => right.gain - left.gain
-      || left.index - right.index);
-
-    for (const choice of choices) {
-      selectedSpecies.push(choice.species);
-      selectedPlants.push(choice.preview);
-      const result = visit(allowDuplicates ? choice.index : choice.index + 1);
-      if (result) return result;
-      selectedPlants.pop();
-      selectedSpecies.pop();
-    }
-    return null;
+  function compatibilityMask(plant) {
+    const traits = plantTraits(plant);
+    let mask = 0;
+    requirements.forEach(({ need, budget, priceBand }, requirementIndex) => {
+      if (!traits.includes(need)) return;
+      if (budget !== null && minimumAskingPrice(plant, priceBand) > budget) return;
+      mask |= 1 << requirementIndex;
+    });
+    return mask;
   }
 
-  return visit(0);
+  // Keep every assignment that current inventory can make. One maximum
+  // matching is not sufficient because a later supplier plant can make a
+  // different inventory assignment become the useful one.
+  const inventoryMasks = new Uint8Array(stateCount);
+  inventoryMasks[0] = 1;
+  availableInventory.forEach((plant) => {
+    const compatible = compatibilityMask(plant);
+    if (!compatible) return;
+    for (let mask = fullMask; mask >= 0; mask -= 1) {
+      if (!inventoryMasks[mask]) continue;
+      let openRequirements = compatible & ~mask;
+      while (openRequirements) {
+        const requirementBit = openRequirements & -openRequirements;
+        inventoryMasks[mask | requirementBit] = 1;
+        openRequirements ^= requirementBit;
+      }
+    }
+  });
+
+  const compatibilityBySpecies = orderedSpecies.map((species) => compatibilityMask({
+    speciesId: species.id,
+    species: species.name,
+    traits: species.traits,
+    // Match virtualPlants(): real carton plants can roll three coins above the
+    // catalog price, so every selected preview must pass that maximum price.
+    price: species.price + 3,
+  }));
+  const paths = Array.from({ length: quantity + 1 }, () => Array(stateCount).fill(null));
+  for (let mask = 0; mask < stateCount; mask += 1) {
+    if (inventoryMasks[mask]) paths[0][mask] = [];
+  }
+
+  function earlierPath(candidate, current) {
+    if (current === null) return true;
+    for (let index = 0; index < candidate.length; index += 1) {
+      if (candidate[index] !== current[index]) return candidate[index] < current[index];
+    }
+    return false;
+  }
+
+  function addSpecies(speciesIndex, slot) {
+    const previousStates = paths[slot - 1];
+    const nextStates = paths[slot];
+    const compatible = compatibilityBySpecies[speciesIndex];
+    for (let mask = 0; mask < stateCount; mask += 1) {
+      const previousPath = previousStates[mask];
+      if (previousPath === null) continue;
+      const candidatePath = [...previousPath, speciesIndex];
+
+      // A shipment can contain useful choice stock after all requests are
+      // covered. Preserve this filler transition to fill the configured tray.
+      if (earlierPath(candidatePath, nextStates[mask])) nextStates[mask] = candidatePath;
+
+      let openRequirements = compatible & ~mask;
+      while (openRequirements) {
+        const requirementBit = openRequirements & -openRequirements;
+        const nextMask = mask | requirementBit;
+        if (earlierPath(candidatePath, nextStates[nextMask])) nextStates[nextMask] = candidatePath;
+        openRequirements ^= requirementBit;
+      }
+    }
+  }
+
+  orderedSpecies.forEach((_, speciesIndex) => {
+    if (allowDuplicates) {
+      // Ascending slots make the current species reusable. Species remain in
+      // deterministic order, as they were in the former DFS.
+      for (let slot = 1; slot <= quantity; slot += 1) addSpecies(speciesIndex, slot);
+      return;
+    }
+    // Descending slots ensure that one species is selected at most once.
+    for (let slot = quantity; slot >= 1; slot -= 1) addSpecies(speciesIndex, slot);
+  });
+
+  const selectedPath = paths[quantity][fullMask];
+  return selectedPath ? selectedPath.map((speciesIndex) => orderedSpecies[speciesIndex]) : null;
 }
 
 function chooseSpecies(type, day, customers, inventory, quantity = type.quantity.min) {

@@ -23,9 +23,11 @@ import {
 } from "./shop-project-system.js";
 import {
   SHOP_EXPANSIONS,
+  expansionResaleValue,
   migrateExpansionState,
   purchaseExpansion,
   saleExpansionBonus,
+  sellExpansion,
   validateExpansionPurchase,
 } from "./shop-expansion-system.js";
 import {
@@ -79,6 +81,24 @@ import {
   progressWeeklyObjective,
   weeklyObjectiveLabel,
 } from "./progression-system.js";
+import {
+  ORDER_STATUS,
+  acceptWeeklyOrder,
+  applyNeighborhoodEventToBriefs,
+  applySupplierRelationshipToLots,
+  completeWeeklyOrder,
+  createDefaultNeighborhoodState,
+  declineWeeklyOrder,
+  eventSaleBonus,
+  exactCustomerFollowUp,
+  holdPlantForOrder,
+  migrateNeighborhoodState,
+  prepareNeighborhoodDay,
+  recordSupplierOrder,
+  releaseOrderPlant,
+  supplierRelationship,
+  validateOrderPlant,
+} from "./neighborhood-system.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
@@ -194,6 +214,7 @@ function freshState() {
     expansionState: migrateExpansionState(),
     benchState: createDefaultBenchState(),
     supplyState: createDefaultSupplyState(),
+    neighborhoodState: createDefaultNeighborhoodState({ day: 1 }),
     upgrades: {
       growLamp: false,
       rainBarrel: false,
@@ -323,6 +344,13 @@ function loadState() {
       inventory,
     });
     const migratedInventory = reconciledBench.inventory;
+    const migratedNeighborhood = migrateNeighborhoodState(value.neighborhoodState, {
+      day: calendar.day,
+      inventory: migratedInventory,
+    });
+    const activeHeldIds = new Set(migratedNeighborhood.order?.status === ORDER_STATUS.ACTIVE
+      ? migratedNeighborhood.order.heldPlantIds
+      : []);
     const migratedPlantIds = new Set(migratedInventory.map((plant) => plant.id));
     migratedSupply.lightAssignments = Object.fromEntries(
       Object.entries(migratedSupply.lightAssignments).filter(([plantId]) => migratedPlantIds.has(plantId)),
@@ -339,15 +367,25 @@ function loadState() {
       serviceableCapacity: sellablePotential(migratedInventory, upgradedCapacity),
     });
     const refreshUnopenedBriefs = migratedPhase === "supply" && (oldVersion < SAVE_VERSION || !value.weeklyObjective);
-    const migratedCustomers = refreshUnopenedBriefs
-      ? generateCustomerBriefs({
+    const generatedCustomers = refreshUnopenedBriefs
+      ? applyNeighborhoodEventToBriefs({
+        briefs: generateCustomerBriefs({
         day: calendar.day,
         inventory: migratedInventory,
         capacity: upgradedCapacity,
         customerMemory,
         count: trade.visitorCount,
+        }),
+        event: migratedNeighborhood.event,
+        week: calendar.week,
+        inventory: migratedInventory,
+        capacity: upgradedCapacity,
       })
       : customers;
+    const migratedCustomers = generatedCustomers.map((customer) => {
+      const followUp = customer.isReturning ? exactCustomerFollowUp(customer, customerMemory[customer.id]) : null;
+      return followUp ? { ...customer, line: followUp, exactFollowUp: true } : customer;
+    });
     return {
       ...base,
       ...value,
@@ -386,12 +424,14 @@ function loadState() {
       expansionState: migratedExpansion,
       benchState: reconciledBench.benchState,
       supplyState: migratedSupply,
+      neighborhoodState: migratedNeighborhood,
       upgrades: savedUpgrades,
       customers: migratedCustomers,
       crateQueue,
       crates: crateQueue.length,
       inventory: migratePlantHealthInventory(migratedInventory).map((plant) => ({
         ...plant,
+        held: activeHeldIds.has(plant.id),
         clipGrowLightAssigned: Boolean(migratedSupply.lightAssignments[plant.id]),
       })),
     };
@@ -427,10 +467,10 @@ function allocateLotCosts(speciesNames, totalCost) {
   return costs;
 }
 
-function sellablePotential(inventory = [], capacity = INVENTORY_CAPACITY) {
+  function sellablePotential(inventory = [], capacity = INVENTORY_CAPACITY) {
   const stock = Array.isArray(inventory) ? inventory : [];
   const freeCapacity = Math.max(0, capacity - stock.length);
-  const readyStock = stock.filter((plant) => !plant.benchStatus && plant.lifeStage !== "juvenile").length;
+  const readyStock = stock.filter((plant) => !plant.benchStatus && !plant.held && plant.lifeStage !== "juvenile").length;
   return Math.min(capacity, readyStock + freeCapacity);
 }
 
@@ -454,6 +494,13 @@ document.addEventListener("DOMContentLoaded", () => {
     tradeDemand: $("trade-demand"),
     tradeCost: $("trade-cost"),
     tradeStock: $("trade-stock"),
+    weeklyPlanStrip: $("weekly-plan-strip"),
+    weeklyEventTitle: $("weekly-event-title"),
+    weeklyEventCopy: $("weekly-event-copy"),
+    weeklyOrderButton: $("weekly-order-button"),
+    weeklyOrderStripTitle: $("weekly-order-strip-title"),
+    weeklyOrderStripProgress: $("weekly-order-strip-progress"),
+    weeklyOrderStripDeadline: $("weekly-order-strip-deadline"),
     openShop: $("open-shop-button"),
     action: $("action-button"),
     careTray: $("care-tray"),
@@ -484,6 +531,8 @@ document.addEventListener("DOMContentLoaded", () => {
     nextDay: $("next-day"),
     upgradeModal: $("upgrade-modal"),
     upgradeOptions: $("upgrade-options"),
+    ownedImprovementOptions: $("owned-improvement-options"),
+    ownedImprovementsCount: $("owned-improvements-count"),
     expansionOptions: $("expansion-options"),
     expansionProgress: $("expansion-progress"),
     projectPanel: $("project-panel"),
@@ -517,6 +566,31 @@ document.addEventListener("DOMContentLoaded", () => {
     supplierForecast: $("supplier-forecast"),
     supplierStatus: $("supplier-status"),
     supplierOptions: $("supplier-options"),
+    supplierRelationshipLevel: $("supplier-relationship-level"),
+    supplierRelationshipName: $("supplier-relationship-name"),
+    supplierRelationshipPerk: $("supplier-relationship-perk"),
+    supplierRelationshipProgressCopy: $("supplier-relationship-progress-copy"),
+    supplierRelationshipProgress: $("supplier-relationship-progress"),
+    weeklyOrderModal: $("weekly-order-modal"),
+    closeWeeklyOrder: $("close-weekly-order"),
+    weeklyOrderStatus: $("weekly-order-status"),
+    weeklyOrderOfferState: $("weekly-order-offer-state"),
+    weeklyOrderCustomer: $("weekly-order-customer"),
+    weeklyOrderOfferName: $("weekly-order-offer-name"),
+    weeklyOrderRequest: $("weekly-order-request"),
+    weeklyOrderDeadline: $("weekly-order-deadline"),
+    weeklyOrderDeposit: $("weekly-order-deposit"),
+    weeklyOrderReward: $("weekly-order-reward"),
+    acceptWeeklyOrder: $("accept-weekly-order"),
+    declineWeeklyOrder: $("decline-weekly-order"),
+    weeklyOrderProgressCopy: $("weekly-order-progress-copy"),
+    weeklyOrderDeadlineChip: $("weekly-order-deadline-chip"),
+    weeklyOrderProgress: $("weekly-order-progress"),
+    weeklyOrderHeldList: $("weekly-order-held-list"),
+    holdSelectedPlant: $("hold-selected-plant"),
+    completeWeeklyOrder: $("complete-weekly-order"),
+    rehabilitationStationLabel: $("rehabilitation-station-label"),
+    rehabilitationStationStatus: $("rehabilitation-station-status"),
     soundButton: $("sound-button"),
     helpButton: $("help-button"),
     helpModal: $("help-modal"),
@@ -544,6 +618,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return optionalSpendingBudget(state).coins;
   }
 
+  function dailySupplierLots() {
+    return applySupplierRelationshipToLots(generateSupplierLots({
+      day: state.day,
+      customers: state.customers,
+      inventory: state.inventory,
+      coins: state.coins,
+      capacity: state.inventoryCapacity,
+      rareNursery: hasExpansion("rare-nursery"),
+    }), state.neighborhoodState, state.coins);
+  }
+
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-8, 8, 7, -7, 0.1, 80);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -569,6 +654,10 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(3.95, 1.12, -3.35),
     new THREE.Vector3(3.95, 2.5, -3.86),
   ];
+  const rehabilitationJobStaging = [
+    new THREE.Vector3(-5.15, 1.17, 3.62),
+    new THREE.Vector3(-4.05, 1.17, 3.75),
+  ];
   const rackStaging = [
     new THREE.Vector3(4.55, 0.17, -0.66),
     new THREE.Vector3(5.35, 0.17, -0.66),
@@ -585,8 +674,8 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(-1.1, 0.03, -0.35),
     new THREE.Vector3(-2.65, 0.03, -1.65),
     new THREE.Vector3(-0.25, 0.03, -1.7),
-    new THREE.Vector3(-1.55, 0.03, 3.8),
-    new THREE.Vector3(-3.35, 0.03, 3.85),
+    new THREE.Vector3(-1.25, 0.03, 2.15),
+    new THREE.Vector3(-2.4, 0.03, 0.25),
     new THREE.Vector3(-0.8, 0.03, 1.25),
   ];
 
@@ -700,6 +789,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!state.weekStats || state.weekStats.week !== calendar.week) {
       state.weekStats = freshWeekStats(calendar.week);
     }
+    state.neighborhoodState = migrateNeighborhoodState(state.neighborhoodState, { day: state.day, inventory: state.inventory });
     const trade = dailyTradeProfile({
       day: state.day,
       inventoryCount: state.inventory.length,
@@ -710,14 +800,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!force && state.customers?.length > 0 && Array.isArray(state.crateQueue)
       && (state.phase !== "supply" || state.customers.length === trade.visitorCount)) {
       if (state.phase === "supply" && !state.supplierOptions?.length) {
-        state.supplierOptions = generateSupplierLots({
-          day: state.day,
-          customers: state.customers,
-          inventory: state.inventory,
-          coins: state.coins,
-          capacity: state.inventoryCapacity,
-          rareNursery: hasExpansion("rare-nursery"),
-        });
+        state.supplierOptions = dailySupplierLots();
       }
       if (!state.displayGoal && state.crateQueue.length) state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
       if (state.phase === "preparation" && state.crates === 0 && !state.displayGoal) {
@@ -726,12 +809,21 @@ document.addEventListener("DOMContentLoaded", () => {
       save();
       return;
     }
-    state.customers = generateCustomerBriefs({
-      day: state.day,
+    state.customers = applyNeighborhoodEventToBriefs({
+      briefs: generateCustomerBriefs({
+        day: state.day,
+        inventory: state.inventory,
+        capacity: state.inventoryCapacity,
+        customerMemory: state.customerMemory,
+        count: trade.visitorCount,
+      }),
+      event: state.neighborhoodState?.event,
+      week: calendar.week,
       inventory: state.inventory,
       capacity: state.inventoryCapacity,
-      customerMemory: state.customerMemory,
-      count: trade.visitorCount,
+    }).map((customer) => {
+      const followUp = customer.isReturning ? exactCustomerFollowUp(customer, state.customerMemory[customer.id]) : null;
+      return followUp ? { ...customer, line: followUp, exactFollowUp: true } : customer;
     });
     state.crateQueue = [];
     state.phase = "supply";
@@ -746,14 +838,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyStartingCoins = state.coins;
     state.dailyBloomStart = state.bloom;
     state.displayGoal = null;
-    state.supplierOptions = generateSupplierLots({
-      day: state.day,
-      customers: state.customers,
-      inventory: state.inventory,
-      coins: state.coins,
-      capacity: state.inventoryCapacity,
-      rareNursery: hasExpansion("rare-nursery"),
-    });
+    state.supplierOptions = dailySupplierLots();
     save();
   }
 
@@ -1007,6 +1092,7 @@ document.addEventListener("DOMContentLoaded", () => {
       selectionAnchor: new THREE.Vector3(0, 1.04, 0),
     });
     world.add(careBench);
+    makeRehabilitationStation(woodMat, darkWood, brass, cream);
     box(world, [2.7, 1.25, 1.0], [2.35, 0.64, 1.25], woodMat);
     box(world, [2.9, 0.16, 1.18], [2.35, 1.3, 1.25], cream);
     box(world, [0.75, 0.55, 0.08], [2.35, 0.75, 1.77], peach);
@@ -1230,6 +1316,45 @@ document.addEventListener("DOMContentLoaded", () => {
     [3.05, 4.75].forEach((x) => box(root, [0.09, 1.3, 0.12], [x, 1.78, -4.05], brass));
     root.visible = Boolean(state.upgrades.benchShelf);
     root.name = "bench-shelf";
+    world.add(root);
+  }
+
+  function makeRehabilitationStation(woodMat, darkWood, brass, cream) {
+    const root = new THREE.Group();
+    const clinic = material(0x8eaea0, { roughness: 0.72 });
+    const glass = material(0xc8ded2, { roughness: 0.3, metalness: 0.08 });
+    box(root, [2.05, 0.16, 1.18], [0, 1.05, 0], clinic);
+    box(root, [1.78, 0.08, 0.92], [0, 0.54, 0], cream);
+    [[-0.86, -0.44], [0.86, -0.44], [-0.86, 0.44], [0.86, 0.44]].forEach(([x, z]) => {
+      box(root, [0.11, 1.05, 0.11], [x, 0.52, z], darkWood);
+    });
+    box(root, [2.02, 0.56, 0.1], [0, 2.12, -0.64], glass);
+    box(root, [2.12, 0.12, 0.18], [0, 2.43, -0.62], brass);
+    [-0.72, 0, 0.72].forEach((x, index) => {
+      cylinder(root, 0.09, 0.08, 0.28 + index * 0.04, [x, 1.29, -0.38], material([0xb67658, 0xd3a952, 0x6e8f83][index]), 9);
+    });
+    const inspectionLamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2),
+      material(0x4f7164, { emissive: 0x6c8d70, emissiveIntensity: 0.22 }),
+    );
+    inspectionLamp.position.set(-0.82, 2.26, -0.6);
+    inspectionLamp.rotation.z = Math.PI;
+    root.add(inspectionLamp);
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.58, 0.5),
+      material(0xf0e6cc, { map: textTexture("PLANT REHAB", "RECOVERY STATION") }),
+    );
+    label.position.set(0, 2.9, -0.25);
+    root.add(label);
+    box(root, [1.72, 0.62, 0.08], [0, 2.9, -0.31], darkWood);
+    root.position.set(-4.7, 0, 3.55);
+    root.name = "rehabilitation-station";
+    registerStation(root, {
+      id: "rehabilitation-station",
+      label: "Plant Rehabilitation Station",
+      ringScale: 1.5,
+      selectionAnchor: new THREE.Vector3(0, 1.06, 0),
+    });
     world.add(root);
   }
 
@@ -1482,7 +1607,7 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(pots);
 
     const corner = new THREE.Group();
-    corner.position.set(-4.6, 0, 2.95);
+    corner.position.set(-2.6, 0, 3.9);
     box(corner, [1.15, 0.18, 1.05], [0, 0.47, 0], woodMat);
     box(corner, [1.15, 1.05, 0.18], [0, 0.92, 0.43], darkWood, [0.15, 0, 0]);
     [[-0.45, -0.4], [0.45, -0.4]].forEach(([x, z]) => box(corner, [0.12, 0.48, 0.12], [x, 0.24, z], darkWood));
@@ -1571,7 +1696,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tagRoot.position.set(0.28, 0.47, 0.31);
     tagRoot.rotation.y = -0.18;
     const stringMat = material(0x6d5946, { roughness: 1 });
-    const tagMat = material(priceTagColors[priceBandOf(plant)], { roughness: 0.88 });
+    const tagMat = material(plant.held ? 0x8f6c98 : priceTagColors[priceBandOf(plant)], { roughness: 0.88 });
     const string = cylinder(tagRoot, 0.008, 0.008, 0.2, [0, 0.08, -0.01], stringMat, 5);
     string.rotation.z = 0.24;
     const tag = box(tagRoot, [0.25, 0.16, 0.025], [0.025, -0.045, 0], tagMat, [0, 0, -0.08]);
@@ -1581,7 +1706,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updatePlantPriceTag(plant) {
     const tag = plantObjects.get(plant?.id)?.getObjectByName("price-tag-card");
-    if (tag?.material?.color) tag.material.color.setHex(priceTagColors[priceBandOf(plant)]);
+    if (tag?.material?.color) tag.material.color.setHex(plant?.held ? 0x8f6c98 : priceTagColors[priceBandOf(plant)]);
   }
 
   function addRootOvergrowth(root) {
@@ -1781,15 +1906,22 @@ document.addEventListener("DOMContentLoaded", () => {
     plantObjects.clear();
     let loose = 0;
     let benchJob = 0;
+    let rehabilitationJob = 0;
     state.inventory.forEach((plant) => {
       const object = createPlant(plant);
       if (plant.benchStatus) {
-        const position = benchJobStaging[Math.min(benchJob, benchJobStaging.length - 1)];
+        const isRehabilitation = plant.benchStatus.type === BENCH_JOB_TYPES.REHABILITATE;
+        const positions = isRehabilitation ? rehabilitationJobStaging : benchJobStaging;
+        const index = isRehabilitation ? rehabilitationJob : benchJob;
+        const position = positions[Math.min(index, positions.length - 1)];
         object.position.copy(position);
-        object.scale.setScalar(benchJob === 0
-          ? Math.min(object.userData.looseScale || 0.78, 0.7)
-          : Math.min(object.userData.looseScale || 0.78, 0.55));
-        benchJob += 1;
+        object.scale.setScalar(isRehabilitation
+          ? Math.min(object.userData.looseScale || 0.78, 0.46)
+          : index === 0
+            ? Math.min(object.userData.looseScale || 0.78, 0.7)
+            : Math.min(object.userData.looseScale || 0.78, 0.55));
+        if (isRehabilitation) rehabilitationJob += 1;
+        else benchJob += 1;
       } else if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
         const slot = SLOT_DATA[plant.slot];
         object.position.set(slot.x, slot.y, slot.z);
@@ -1940,6 +2072,12 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
     ui.supplyButton?.addEventListener("click", () => openModal(ui.supplyModal, true));
     ui.closeSupply?.addEventListener("click", () => openModal(ui.supplyModal, false));
+    ui.weeklyOrderButton?.addEventListener("click", () => openModal(ui.weeklyOrderModal, true));
+    ui.closeWeeklyOrder?.addEventListener("click", () => openModal(ui.weeklyOrderModal, false));
+    ui.acceptWeeklyOrder?.addEventListener("click", acceptCurrentWeeklyOrder);
+    ui.declineWeeklyOrder?.addEventListener("click", declineCurrentWeeklyOrder);
+    ui.holdSelectedPlant?.addEventListener("click", holdSelectedPlantForOrder);
+    ui.completeWeeklyOrder?.addEventListener("click", completeCurrentWeeklyOrder);
     ui.helpButton?.addEventListener("click", () => openModal(ui.helpModal, true));
     ui.closeHelp?.addEventListener("click", () => openModal(ui.helpModal, false));
     ui.soundButton?.addEventListener("click", toggleSound);
@@ -1997,14 +2135,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function showSupplierBoard() {
     if (!ui.supplierBoard) return;
     if (!state.supplierOptions?.length) {
-      state.supplierOptions = generateSupplierLots({
-        day: state.day,
-        customers: state.customers,
-        inventory: state.inventory,
-        coins: state.coins,
-        capacity: state.inventoryCapacity,
-        rareNursery: hasExpansion("rare-nursery"),
-      });
+      state.supplierOptions = dailySupplierLots();
     }
     renderSupplierBoard();
     ui.supplierBoard.hidden = false;
@@ -2017,6 +2148,17 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderSupplierBoard() {
     if (!ui.supplierOptions) return;
     const calendar = calendarForDay(state.day);
+    const relationship = supplierRelationship(state.neighborhoodState);
+    if (ui.supplierRelationshipLevel) ui.supplierRelationshipLevel.textContent = `Level ${relationship.level}`;
+    if (ui.supplierRelationshipName) ui.supplierRelationshipName.textContent = relationship.name;
+    if (ui.supplierRelationshipPerk) ui.supplierRelationshipPerk.textContent = relationship.perk;
+    if (ui.supplierRelationshipProgressCopy) ui.supplierRelationshipProgressCopy.textContent = relationship.nextAt
+      ? `${relationship.orders}/${relationship.nextAt} nursery orders`
+      : `${relationship.orders} nursery orders · top level`;
+    if (ui.supplierRelationshipProgress) {
+      ui.supplierRelationshipProgress.max = relationship.nextAt || Math.max(relationship.orders, 1);
+      ui.supplierRelationshipProgress.value = relationship.orders;
+    }
     if (ui.supplierTitle) ui.supplierTitle.textContent = `${calendar.weekday} · Week ${calendar.week}`;
     if (ui.supplierForecast) {
       const needs = [...new Set(state.customers.map((customer) => customer.need))];
@@ -2074,7 +2216,8 @@ document.addEventListener("DOMContentLoaded", () => {
       copy.textContent = lot.description || "A small nursery assortment for today’s shop.";
       const contents = document.createElement("p");
       contents.className = "supplier-contents";
-      contents.textContent = supplierContents(lot);
+      contents.textContent = [supplierContents(lot), lot.relationshipClue, lot.relationshipDiscount ? `Trusted price saves ${lot.relationshipDiscount} coins.` : ""]
+        .filter(Boolean).join(" · ");
       const badges = document.createElement("div");
       badges.className = "supplier-badges";
       const condition = document.createElement("span");
@@ -2132,6 +2275,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.selectedLotId = lot.id;
     state.coins -= lot.cost || 0;
     state.dailyStockCost += lot.cost || 0;
+    state.neighborhoodState = recordSupplierOrder(state.neighborhoodState, lot.supplierId || lot.kind).state;
     const speciesNames = [...(lot.speciesNames || [])];
     const acquisitionCosts = allocateLotCosts(speciesNames, lot.cost || 0);
     state.crateQueue = speciesNames.map((speciesName, index) => ({
@@ -2211,13 +2355,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function openModal(element, open) {
     if (!element) return;
-    if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal].includes(element)) {
+    if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.weeklyOrderModal].includes(element)) {
       toast("Finish the current shop moment first.");
       return;
     }
     if (element === ui.upgradeModal && open) renderUpgrades();
     if (element === ui.benchModal && open) renderBench();
     if (element === ui.supplyModal && open) renderSupplyShelf();
+    if (element === ui.weeklyOrderModal && open) renderWeeklyOrder();
     if (open) run.modalReturnFocus = document.activeElement;
     element.hidden = !open;
     element.classList.toggle("is-open", open);
@@ -2227,7 +2372,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (ui.benchOverview) ui.benchOverview.setAttribute("aria-expanded", String(open));
     }
     if (element === ui.supplyModal && ui.supplyButton) ui.supplyButton.setAttribute("aria-expanded", String(open));
-    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.report, ui.supplierBoard]
+    if (element === ui.weeklyOrderModal && ui.weeklyOrderButton) ui.weeklyOrderButton.setAttribute("aria-expanded", String(open));
+    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.weeklyOrderModal, ui.report, ui.supplierBoard]
       .some((modal) => modal && !modal.hidden);
     if (ui.game) ui.game.inert = anyModalOpen;
     if (open) {
@@ -2239,7 +2385,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function currentOpenModal() {
-    return [ui.supplierBoard, ui.report, ui.benchModal, ui.supplyModal, ui.upgradeModal, ui.helpModal]
+    return [ui.supplierBoard, ui.report, ui.weeklyOrderModal, ui.benchModal, ui.supplyModal, ui.upgradeModal, ui.helpModal]
       .find((modal) => modal && !modal.hidden) || null;
   }
 
@@ -2296,6 +2442,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (state.phase === "supply") return { ok: false, message: "Choose today’s nursery shipment first." };
     if (state.crates > 0 || run.crateAnimation) {
       return { ok: false, message: "Open every carton before bench work starts." };
+    }
+    if (plant?.held && type === BENCH_JOB_TYPES.PROPAGATE) {
+      return { ok: false, message: "A plant held for an order cannot be used for propagation." };
     }
     const jobCost = BENCH_JOB_COSTS[type]?.coins || 0;
     const freeCoins = discretionaryCoins();
@@ -2869,12 +3018,71 @@ document.addEventListener("DOMContentLoaded", () => {
       button.textContent = owned ? "Already installed" : `Install · ${costCopy}`;
       button.disabled = owned;
       button.addEventListener("click", () => buyUpgrade(upgrade));
-      card.append(heading, detail, button);
+      const actions = document.createElement("div");
+      actions.className = "upgrade-actions";
+      actions.append(button);
+      card.append(heading, detail, actions);
       ui.upgradeOptions.append(card);
     };
     upgrades.forEach(addCard);
     renderExpansionOptions();
+    renderOwnedImprovements(upgrades);
     renderProjectPanel();
+  }
+
+  function renderOwnedImprovements(upgrades) {
+    if (!ui.ownedImprovementOptions) return;
+    ui.ownedImprovementOptions.replaceChildren();
+    const ownedFixtures = upgrades.filter((upgrade) => state.upgrades[upgrade.key]).map((upgrade) => ({
+      id: upgrade.key,
+      title: upgrade.ownedTitle,
+      effect: upgrade.ownedCopy,
+      refund: improvementResaleValue(upgrade),
+      remove: () => sellUpgrade(upgrade),
+    }));
+    const ownedExpansions = SHOP_EXPANSIONS.filter((expansion) => hasExpansion(expansion.id)).map((expansion) => ({
+      id: expansion.id,
+      title: expansion.title,
+      effect: expansion.effectLabel,
+      refund: expansionResaleValue(expansion.id),
+      remove: () => sellShopExpansion(expansion.id),
+    }));
+    const owned = [...ownedFixtures, ...ownedExpansions];
+    if (ui.ownedImprovementsCount) ui.ownedImprovementsCount.textContent = `${owned.length} placed`;
+    if (!owned.length) {
+      const empty = document.createElement("p");
+      empty.className = "owned-improvements-empty";
+      empty.textContent = "You have no removable improvements yet.";
+      ui.ownedImprovementOptions.append(empty);
+      return;
+    }
+    owned.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "upgrade-card improvement-card is-managed";
+      card.dataset.improvementId = item.id;
+      const copy = document.createElement("div");
+      copy.className = "improvement-card-copy";
+      const heading = document.createElement("h3");
+      heading.textContent = item.title;
+      const effect = document.createElement("p");
+      effect.textContent = item.effect;
+      copy.append(heading, effect);
+      const footer = document.createElement("div");
+      footer.className = "improvement-card-actions";
+      const refund = document.createElement("span");
+      refund.className = "improvement-refund";
+      refund.textContent = `${item.refund.coins} coin refund · no Bloom`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button improvement-remove-button";
+      remove.dataset.improvementAction = "remove";
+      remove.dataset.improvementId = item.id;
+      remove.textContent = "Sell and remove";
+      remove.addEventListener("click", item.remove);
+      footer.append(refund, remove);
+      card.append(copy, footer);
+      ui.ownedImprovementOptions.append(card);
+    });
   }
 
   function renderExpansionOptions() {
@@ -2920,7 +3128,10 @@ document.addEventListener("DOMContentLoaded", () => {
             : validation.message;
       button.disabled = !validation.ok;
       button.addEventListener("click", () => buyExpansion(expansion.id));
-      card.append(kicker, heading, effect, detail, button);
+      const actions = document.createElement("div");
+      actions.className = "upgrade-actions";
+      actions.append(button);
+      card.append(kicker, heading, effect, detail, actions);
       ui.expansionOptions.append(card);
     });
   }
@@ -2954,6 +3165,42 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
     sound("upgrade");
     toast(`${result.expansion.title} is now in the shop. ${result.expansion.effectLabel}.`, 4300);
+    renderUpgrades();
+    updateUi();
+  }
+
+  function sellShopExpansion(id) {
+    const expansion = SHOP_EXPANSIONS.find((item) => item.id === id);
+    if (!expansion || !hasExpansion(id)) return;
+    if (id === "display-shelves") {
+      const nextCapacity = INVENTORY_CAPACITY + (state.upgrades.deliveryRack ? 4 : 0);
+      const committedStock = state.inventory.length + (state.crateQueue?.length || 0);
+      if (committedStock > nextCapacity) {
+        sound("error");
+        toast(`Sell, rehome, or unpack ${committedStock - nextCapacity} committed plants before removing Display Shelves.`);
+        return;
+      }
+      state.inventory.forEach((plant) => {
+        if (SLOT_DATA[plant.slot]?.requiresExpansion === "display-shelves") plant.slot = null;
+      });
+      state.inventoryCapacity = nextCapacity;
+    }
+    const result = sellExpansion({ id, state: state.expansionState, coins: state.coins, bloom: state.bloom });
+    if (!result.ok) {
+      sound("error");
+      toast(result.message);
+      return;
+    }
+    state.expansionState = result.state;
+    state.coins = result.coins;
+    state.bloom = result.bloom;
+    const object = world.getObjectByName(expansion.objectName);
+    if (object) object.visible = false;
+    rebuildPlants();
+    updateSlotGlow();
+    save();
+    sound("coin");
+    toast(`${expansion.title} was removed. You received ${result.refund.coins} coins.`);
     renderUpgrades();
     updateUi();
   }
@@ -3078,6 +3325,48 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
+  function improvementResaleValue(upgrade) {
+    return {
+      coins: Math.floor((upgrade?.coins || 0) * 0.5),
+      bloom: 0,
+    };
+  }
+
+  function sellUpgrade(upgrade) {
+    if (!upgrade || !state.upgrades[upgrade.key]) return;
+    if (upgrade.key === "deliveryRack") {
+      const nextCapacity = INVENTORY_CAPACITY + (hasExpansion("display-shelves") ? 4 : 0);
+      const committedStock = state.inventory.length + (state.crateQueue?.length || 0);
+      if (committedStock > nextCapacity) {
+        sound("error");
+        toast(`Sell, rehome, or unpack ${committedStock - nextCapacity} committed plants before removing the Delivery Rack.`);
+        return;
+      }
+      state.inventoryCapacity = nextCapacity;
+    }
+    if (upgrade.key === "benchShelf" && (state.benchState?.jobs?.length || 0) > CARE_BENCH_BASE_SLOTS) {
+      sound("error");
+      toast("Wait until only one Care Bench job remains before selling the second shelf.");
+      return;
+    }
+    const refund = improvementResaleValue(upgrade);
+    state.upgrades[upgrade.key] = false;
+    state.coins += refund.coins;
+    state.bloom += refund.bloom;
+    if (upgrade.key === "benchShelf") {
+      state.benchState = { ...migrateBenchState(state.benchState), slotCount: CARE_BENCH_BASE_SLOTS };
+    }
+    const object = world.getObjectByName(upgrade.objectName);
+    if (object) object.visible = false;
+    rebuildPlants();
+    save();
+    sound("coin");
+    toast(`${upgrade.ownedTitle} was removed. You received ${refund.coins} coins.`);
+    renderUpgrades();
+    if (ui.benchModal && !ui.benchModal.hidden) renderBench();
+    updateUi();
+  }
+
   function currentCustomer() {
     return state.customers?.[state.customerIndex] || null;
   }
@@ -3090,6 +3379,268 @@ document.addEventListener("DOMContentLoaded", () => {
       plantId: "shop-supply-request",
       saleIndex: state.customerIndex,
     });
+  }
+
+  function renderWeeklyPlan() {
+    state.neighborhoodState = migrateNeighborhoodState(state.neighborhoodState, { day: state.day, inventory: state.inventory });
+    const event = state.neighborhoodState.event;
+    const order = state.neighborhoodState.order;
+    const heldCount = order?.status === ORDER_STATUS.COMPLETED
+      ? order.quantity
+      : order?.heldPlantIds?.length || 0;
+    if (ui.weeklyEventTitle) ui.weeklyEventTitle.textContent = event?.title || "A quiet week";
+    if (ui.weeklyEventCopy) ui.weeklyEventCopy.textContent = event?.copy || "Regular demand in the shop.";
+    if (ui.weeklyOrderStripTitle) ui.weeklyOrderStripTitle.textContent = order
+      ? order.status === ORDER_STATUS.OFFERED ? "New order available" : order.title
+      : "Orders begin in Week 2";
+    if (ui.weeklyOrderStripProgress) ui.weeklyOrderStripProgress.textContent = order
+      ? `${heldCount}/${order.quantity} held`
+      : "0/0 held";
+    if (ui.weeklyOrderStripDeadline) ui.weeklyOrderStripDeadline.textContent = order
+      ? order.status === ORDER_STATUS.COMPLETED ? "Collected" : `Due Day ${order.deadlineDay}`
+      : "No deadline";
+    if (ui.weeklyOrderButton) {
+      ui.weeklyOrderButton.disabled = !order;
+      ui.weeklyOrderButton.classList.toggle("is-active", order?.status === ORDER_STATUS.ACTIVE);
+    }
+    if (ui.rehabilitationStationLabel) ui.rehabilitationStationLabel.hidden = !run.started;
+    if (ui.rehabilitationStationStatus) {
+      const count = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length || 0;
+      ui.rehabilitationStationStatus.textContent = count
+        ? `${count} ${count === 1 ? "plant is" : "plants are"} in recovery`
+        : "Long-stay and rescue plant care";
+    }
+  }
+
+  function renderWeeklyOrder() {
+    if (!ui.weeklyOrderHeldList) return;
+    renderWeeklyPlan();
+    const order = state.neighborhoodState.order;
+    const heldIds = new Set(order?.heldPlantIds || []);
+    const heldPlants = state.inventory.filter((plant) => heldIds.has(plant.id));
+    const status = order?.status || "locked";
+    const labels = {
+      offered: "New offer",
+      active: "Active",
+      completed: "Complete",
+      declined: "Declined",
+      missed: "Missed",
+      locked: "Locked",
+    };
+    if (ui.weeklyOrderOfferState) {
+      ui.weeklyOrderOfferState.textContent = labels[status] || status;
+      ui.weeklyOrderOfferState.dataset.state = status;
+    }
+    if (ui.weeklyOrderCustomer) ui.weeklyOrderCustomer.textContent = order?.customerName || "Neighborhood orders";
+    if (ui.weeklyOrderOfferName) ui.weeklyOrderOfferName.textContent = order?.title || "Orders begin in Week 2";
+    if (ui.weeklyOrderRequest) ui.weeklyOrderRequest.textContent = order
+      ? `Hold ${order.quantity} healthy ${order.requiredTrait} plants. Held plants cannot be sold to daily visitors.`
+      : "Build the shop through the opening week first.";
+    if (ui.weeklyOrderDeadline) ui.weeklyOrderDeadline.textContent = order ? `Day ${order.deadlineDay} · Friday` : "No deadline";
+    if (ui.weeklyOrderDeposit) ui.weeklyOrderDeposit.textContent = order ? `${order.deposit} coins` : "0 coins";
+    if (ui.weeklyOrderReward) ui.weeklyOrderReward.textContent = order ? `${order.rewardCoins} coins · ${order.rewardBloom} Bloom` : "0 coins · 0 Bloom";
+    const heldCount = status === ORDER_STATUS.COMPLETED
+      ? order.quantity
+      : heldPlants.length;
+    if (ui.weeklyOrderProgressCopy) ui.weeklyOrderProgressCopy.textContent = order
+      ? `${heldCount}/${order.quantity} plants held`
+      : "No plants are held.";
+    if (ui.weeklyOrderProgress) {
+      ui.weeklyOrderProgress.max = order?.quantity || 1;
+      ui.weeklyOrderProgress.value = heldCount;
+    }
+    const daysLeft = order ? order.deadlineDay - state.day : 0;
+    if (ui.weeklyOrderDeadlineChip) {
+      ui.weeklyOrderDeadlineChip.textContent = order ? `${Math.max(0, daysLeft)} ${Math.abs(daysLeft) === 1 ? "day" : "days"} left` : "No order";
+      ui.weeklyOrderDeadlineChip.classList.toggle("is-urgent", Boolean(order && daysLeft <= 1 && status === ORDER_STATUS.ACTIVE));
+    }
+    ui.weeklyOrderHeldList.replaceChildren();
+    if (!heldPlants.length) {
+      const empty = document.createElement("p");
+      empty.className = "held-stock-empty";
+      empty.textContent = status === ORDER_STATUS.COMPLETED
+        ? "The held plants were collected. This order is complete."
+        : status === ORDER_STATUS.DECLINED
+          ? "This offer was declined. No stock is reserved."
+          : status === ORDER_STATUS.MISSED
+            ? "The deadline passed. All held stock was released."
+            : status === ORDER_STATUS.OFFERED
+              ? "Accept the offer before you reserve any stock."
+              : "Choose a suitable shop plant, then hold it for this order.";
+      ui.weeklyOrderHeldList.append(empty);
+    }
+    heldPlants.forEach((plant) => {
+      const row = document.createElement("article");
+      row.className = "held-stock-item";
+      const copy = document.createElement("div");
+      copy.className = "held-stock-item-copy";
+      const name = document.createElement("strong");
+      name.textContent = plant.species;
+      const detail = document.createElement("small");
+      detail.textContent = `${plant.traits.join(" · ")} · held for ${order.customerName}`;
+      copy.append(name, detail);
+      const release = document.createElement("button");
+      release.type = "button";
+      release.className = "button held-stock-release";
+      release.dataset.orderAction = "release";
+      release.textContent = "Release";
+      release.addEventListener("click", () => releaseHeldPlant(plant.id));
+      row.append(copy, release);
+      ui.weeklyOrderHeldList.append(row);
+    });
+    const selectedPlant = run.selected?.kind === "plant" ? state.inventory.find((plant) => plant.id === run.selected.id) : null;
+    const validation = validateOrderPlant({ state: state.neighborhoodState, plant: selectedPlant, day: state.day });
+    if (ui.holdSelectedPlant) {
+      ui.holdSelectedPlant.hidden = status !== ORDER_STATUS.ACTIVE;
+      ui.holdSelectedPlant.disabled = !validation.ok;
+      ui.holdSelectedPlant.textContent = validation.ok ? `Hold ${selectedPlant.species}` : "Hold selected plant";
+      ui.holdSelectedPlant.title = validation.message;
+    }
+    if (ui.completeWeeklyOrder) {
+      ui.completeWeeklyOrder.disabled = status !== ORDER_STATUS.ACTIVE || heldCount < (order?.quantity || 1);
+      ui.completeWeeklyOrder.textContent = status === ORDER_STATUS.COMPLETED ? "Order collected ✓" : "Complete order";
+    }
+    if (ui.acceptWeeklyOrder) ui.acceptWeeklyOrder.hidden = status !== ORDER_STATUS.OFFERED;
+    if (ui.declineWeeklyOrder) ui.declineWeeklyOrder.hidden = status !== ORDER_STATUS.OFFERED;
+    if (ui.weeklyOrderStatus) {
+      ui.weeklyOrderStatus.textContent = order
+        ? status === ORDER_STATUS.OFFERED ? "Accept the order to receive its deposit. It is optional."
+          : status === ORDER_STATUS.ACTIVE ? `${heldCount}/${order.quantity} suitable plants are held.`
+            : status === ORDER_STATUS.COMPLETED ? "This order was collected and paid in full."
+              : status === ORDER_STATUS.DECLINED ? "This week has no order commitment."
+                : "The deadline passed. Held stock returned to normal sale."
+        : "Weekly orders unlock in Week 2.";
+      ui.weeklyOrderStatus.dataset.tone = status === ORDER_STATUS.COMPLETED ? "success" : status === ORDER_STATUS.MISSED ? "warning" : "";
+    }
+  }
+
+  function acceptCurrentWeeklyOrder() {
+    const result = acceptWeeklyOrder({ state: state.neighborhoodState, day: state.day, coins: state.coins });
+    if (!result.ok) return toast(result.message);
+    state.neighborhoodState = result.state;
+    state.coins = result.coins;
+    state.dailyRevenue += result.deposit;
+    addWeekStat("revenue", result.deposit);
+    addWeekStat("profit", result.deposit);
+    save();
+    sound("coin");
+    toast(result.message);
+    renderWeeklyOrder();
+    updateUi();
+  }
+
+  function declineCurrentWeeklyOrder() {
+    const result = declineWeeklyOrder({ state: state.neighborhoodState, day: state.day });
+    if (!result.ok) return toast(result.message);
+    state.neighborhoodState = result.state;
+    save();
+    sound("hint");
+    renderWeeklyOrder();
+    updateUi();
+  }
+
+  function holdSelectedPlantForOrder() {
+    const plant = run.selected?.kind === "plant" ? state.inventory.find((item) => item.id === run.selected.id) : null;
+    if (state.phase === "supply" || state.crates > 0 || run.crateAnimation) {
+      sound("error");
+      toast("Choose and unpack today's shipment before you reserve weekly-order stock.");
+      return;
+    }
+    const result = holdPlantForOrder({ state: state.neighborhoodState, plant, day: state.day });
+    if (!result.ok) {
+      sound("error");
+      toast(result.message);
+      return;
+    }
+    const remainingCustomers = state.phase === "open"
+      ? state.customers.slice(state.customerIndex)
+      : state.customers;
+    const afterHold = state.inventory.map((item) => item.id === plant.id ? { ...item, held: true } : item);
+    if (!inventoryCoversCustomers(afterHold, remainingCustomers)) {
+      sound("error");
+      toast(`${plant.species} is still needed for today's visitor notes. Hold another ${result.state.order.requiredTrait} plant.`);
+      return;
+    }
+    state.neighborhoodState = result.state;
+    if (plant) plant.held = true;
+    save();
+    sound("upgrade");
+    toast(result.message);
+    renderWeeklyOrder();
+    updateUi();
+  }
+
+  function releaseHeldPlant(plantId) {
+    const result = releaseOrderPlant({ state: state.neighborhoodState, plantId, day: state.day, inventory: state.inventory });
+    if (!result.ok) return toast(result.message);
+    state.neighborhoodState = result.state;
+    const plant = state.inventory.find((item) => item.id === plantId);
+    if (plant) plant.held = false;
+    save();
+    sound("hint");
+    renderWeeklyOrder();
+    updateUi();
+  }
+
+  function completeCurrentWeeklyOrder() {
+    const result = completeWeeklyOrder({ state: state.neighborhoodState, day: state.day, inventory: state.inventory, coins: state.coins, bloom: state.bloom });
+    if (!result.ok) {
+      sound("error");
+      toast(result.message);
+      return;
+    }
+    const soldIds = new Set(result.soldPlantIds);
+    const soldPlants = state.inventory.filter((plant) => soldIds.has(plant.id));
+    const costOfGoods = soldPlants.reduce((sum, plant) => sum + (Number(plant.acquisitionCost) || 0), 0);
+    soldPlants.forEach((plant) => {
+      if (plant.clipGrowLightAssigned) {
+        const released = releaseSupplyClipGrowLight({ supplyState: state.supplyState, plantId: plant.id });
+        if (released.ok) state.supplyState = released.supplyState;
+      }
+    });
+    state.inventory = state.inventory.filter((plant) => !soldIds.has(plant.id));
+    state.neighborhoodState = result.state;
+    state.coins = result.coins;
+    state.bloom = result.bloom;
+    state.lifetimeBloom += result.bloomReward;
+    state.dailySales += result.soldPlantIds.length;
+    state.dailyRevenue += result.payout;
+    state.dailyCostOfGoods += costOfGoods;
+    addWeekStat("sales", result.soldPlantIds.length);
+    addWeekStat("revenue", result.payout);
+    addWeekStat("costOfGoods", costOfGoods);
+    addWeekStat("profit", result.payout - costOfGoods);
+    addWeekStat("bloom", result.bloomReward);
+    if (!Array.isArray(state.weekStats.uniqueSpeciesSold)) state.weekStats.uniqueSpeciesSold = [];
+    const soldSpeciesIds = [...new Set(soldPlants.map((plant) => plant.speciesId || speciesOf(plant).id))];
+    soldSpeciesIds.forEach((speciesId) => {
+      if (!state.weekStats.uniqueSpeciesSold.includes(speciesId)) state.weekStats.uniqueSpeciesSold.push(speciesId);
+    });
+    const completedOrder = state.neighborhoodState.order;
+    const orderMemory = customerMemoryFor({ id: completedOrder.customerId, name: completedOrder.customerName });
+    orderMemory.purchases += soldPlants.length;
+    orderMemory.satisfaction += soldPlants.length * 3;
+    orderMemory.lastVisitDay = state.day;
+    orderMemory.lastOrderDay = state.day;
+    orderMemory.lastOrderTitle = completedOrder.title;
+    orderMemory.lastOrderQuantity = soldPlants.length;
+    if (soldPlants.length) orderMemory.lastSpecies = soldPlants.at(-1).species;
+    let weeklyRewardCopy = "";
+    const orderMargin = completedOrder.deposit + result.payout - costOfGoods;
+    [
+      { metric: "plantsSold", value: soldPlants.length },
+      { metric: "grossProfit", value: orderMargin },
+      ...soldSpeciesIds.map((speciesId) => ({ metric: "uniqueSpeciesSold", value: 1, speciesId })),
+    ].forEach((event) => {
+      if (!event.value || weeklyRewardCopy) return;
+      weeklyRewardCopy = advanceWeekGoal(event);
+    });
+    rebuildPlants();
+    save();
+    sound("sale");
+    toast(`${result.message} +${result.payout} coins and +${result.bloomReward} Bloom.${weeklyRewardCopy}`, 4800);
+    renderWeeklyOrder();
+    updateUi();
   }
 
   function customerMemoryFor(person) {
@@ -3120,6 +3671,7 @@ document.addEventListener("DOMContentLoaded", () => {
     memory.lastSpecies = plant.species;
     memory.lastPriceBand = priceBandOf(plant);
     memory.lastVisitDay = state.day;
+    return memory;
   }
 
   function createCustomer(person) {
@@ -3268,7 +3820,7 @@ document.addEventListener("DOMContentLoaded", () => {
       placePlant(run.carried, id);
     } else if (kind === "station") {
       if (id === "watering-can") useWateringCan();
-      else if (id === "care-bench" || id === "grow-lamp") openCareBenchFromRoom();
+      else if (id === "care-bench" || id === "rehabilitation-station" || id === "grow-lamp") openCareBenchFromRoom();
       else if (id === "supply-shelf") {
         canvas.focus({ preventScroll: true });
         openModal(ui.supplyModal, true);
@@ -3764,6 +4316,11 @@ document.addEventListener("DOMContentLoaded", () => {
       toast(`${plant.species} is still growing. It needs ${plant.maturityDaysRemaining} more mornings before sale.`);
       return;
     }
+    if (plant.held) {
+      sound("error");
+      toast(`${plant.species} is held for the weekly order. Release it in the order book before a regular sale.`);
+      return;
+    }
     if (!plant.traits.includes(person.need)) {
       sound("error");
       toast(`${person.name} likes it, but really needs something ${person.need}.`);
@@ -3813,7 +4370,8 @@ document.addEventListener("DOMContentLoaded", () => {
       extras: extras > 0 ? ["lovely"] : [],
       basePayout: price,
     });
-    const payout = price + expansionBonus;
+    const eventBonus = eventSaleBonus(person, plant, state.neighborhoodState?.event);
+    const payout = price + expansionBonus + eventBonus;
     const satisfaction = 1 + extras + (idealLight ? 1 : 0) + (band === "quick" ? 1 : 0);
     const delighted = satisfaction >= 4;
     const bloomReward = 2 + extras;
@@ -3851,7 +4409,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!Array.isArray(state.weekStats.uniqueSpeciesSold)) state.weekStats.uniqueSpeciesSold = [];
     const soldSpeciesId = plant.speciesId || speciesOf(plant).id;
     if (!state.weekStats.uniqueSpeciesSold.includes(soldSpeciesId)) state.weekStats.uniqueSpeciesSold.push(soldSpeciesId);
-    rememberCustomerSale(person, plant, satisfaction);
+    const saleMemory = rememberCustomerSale(person, plant, satisfaction);
+    if (eventBonus > 0 && state.neighborhoodState?.event) {
+      saleMemory.lastEventDay = state.day;
+      saleMemory.lastEventTitle = state.neighborhoodState.event.title;
+      saleMemory.lastEventTrait = state.neighborhoodState.event.trait;
+    }
     let weeklyRewardCopy = "";
     [
       { metric: "plantsSold", value: 1 },
@@ -3897,10 +4460,11 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
     sound("sale");
     const shopBonusCopy = expansionBonus ? ` Shop details add ${expansionBonus} bonus ${expansionBonus === 1 ? "coin" : "coins"}.` : "";
+    const eventBonusCopy = eventBonus ? ` ${state.neighborhoodState.event.title} adds ${eventBonus} coins.` : "";
     const addOnCopy = addOnSale?.addOnSold
       ? ` They also buy ${addOnSale.item.title} for ${addOnSale.revenue} coins.`
       : addOnRequest ? ` ${addOnRequest.title} was requested, but it was out of stock.` : "";
-    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${addOnCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy || addOnCopy ? 5200 : 3100);
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${eventBonusCopy}${addOnCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy || addOnCopy || eventBonusCopy ? 5200 : 3100);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -4068,7 +4632,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showReport() {
-    [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal].forEach((modal) => {
+    [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.weeklyOrderModal].forEach((modal) => {
       if (!modal) return;
       modal.hidden = true;
       modal.classList.remove("is-open");
@@ -4076,6 +4640,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     if (ui.benchButton) ui.benchButton.setAttribute("aria-expanded", "false");
     if (ui.supplyButton) ui.supplyButton.setAttribute("aria-expanded", "false");
+    if (ui.weeklyOrderButton) ui.weeklyOrderButton.setAttribute("aria-expanded", "false");
     state.phase = "report";
     run.arranging = false;
     cancelMove();
@@ -4165,6 +4730,16 @@ document.addEventListener("DOMContentLoaded", () => {
     state.customers = [];
     state.crateQueue = [];
     state.displayGoal = null;
+    const neighborhoodMorning = prepareNeighborhoodDay({
+      state: state.neighborhoodState,
+      day: state.day,
+      inventory: state.inventory,
+    });
+    state.neighborhoodState = neighborhoodMorning.state;
+    const heldIds = new Set(state.neighborhoodState.order?.status === ORDER_STATUS.ACTIVE
+      ? state.neighborhoodState.order.heldPlantIds
+      : []);
+    state.inventory.forEach((plant) => { plant.held = heldIds.has(plant.id); });
     const healthMorning = advancePlantHealthInventoryMorning(state.inventory, { day: state.day });
     state.inventory = healthMorning.inventory;
     const maturedPlants = [];
@@ -4229,6 +4804,8 @@ document.addEventListener("DOMContentLoaded", () => {
       maturedPlants.length ? `${maturedPlants.join(" and ")} ${maturedPlants.length === 1 ? "is" : "are"} mature and ready for sale.` : "",
       newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
       healthMorning.newlyStressed.length || healthMorning.newIssues.length ? healthMorning.message : "",
+      neighborhoodMorning.message,
+      calendar.isMonday && state.neighborhoodState.event ? `${state.neighborhoodState.event.title}: ${state.neighborhoodState.event.copy}` : "",
       state.upgrades.growLamp && state.benchState.jobs.some((job) => job.lampAssisted)
         ? "The grow lamp is helping the active Care Bench work."
         : "",
@@ -4240,6 +4817,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateUi(saleMessage = false) {
     updateRetailSupplyShelfStock();
+    renderWeeklyPlan();
     const calendar = calendarForDay(state.day);
     const trade = dailyTradeProfile({
       day: state.day,
@@ -4399,6 +4977,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const fit = lightFit(plant);
         const helpfulCare = spec.beneficialCare.join(" · ");
         const specialCopy = spec.special ? " · rare nursery specimen" : "";
+        const heldCopy = plant.held ? " · HELD for weekly order" : "";
         const goalFit = state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)
           ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
           : "";
@@ -4410,7 +4989,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ? ` · needs ${supplyItemForId(treatmentForIssue(plant.healthIssue))?.title || "treatment"}`
           : "";
         const fertilizerCopy = hasFertilizerGrowthBoost(plant, { day: state.day }) ? " · fertilizer boost active" : "";
-        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth}${nurseryAgeCopy}${rehabCopy}${treatmentCopy}${fertilizerCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        copy = `${plant.traits.join(" · ")}${specialCopy}${heldCopy} · ${condition.icon} ${condition.label}${growth}${nurseryAgeCopy}${rehabCopy}${treatmentCopy}${fertilizerCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -4425,8 +5004,8 @@ document.addEventListener("DOMContentLoaded", () => {
           action = "Move this plant";
           disabled = false;
         } else if (person) {
-          action = `Offer for ${plantAskingPrice(plant)} coins`;
-          disabled = false;
+          action = plant.held ? "Held for weekly order" : `Offer for ${plantAskingPrice(plant)} coins`;
+          disabled = Boolean(plant.held);
         }
       }
     } else if (selected?.kind === "customer" && person) {
@@ -4443,6 +5022,14 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `${jobs} active ${jobs === 1 ? "job is" : "jobs are"} using the bench. Open it to check the work or plan the next job.`
           : "Repot cramped roots, clear nursery stress and restore rescue value, or propagate a thriving plant during morning preparation.";
         action = "Open Care Bench";
+        disabled = false;
+      } else if (selected.id === "rehabilitation-station") {
+        const rehabilitationJobs = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length || 0;
+        title = "Plant Rehabilitation Station";
+        copy = rehabilitationJobs
+          ? `${rehabilitationJobs} recovery ${rehabilitationJobs === 1 ? "job is" : "jobs are"} active here. Nursery-stressed plants recover at this separate workstation.`
+          : "This marked recovery station clears nursery stress and restores lost sale value. Water, mist, and pruning cannot replace rehabilitation.";
+        action = "Open Rehabilitation Jobs";
         disabled = false;
       } else if (selected.id === "watering-can") {
         const target = stationTargetPlant();
@@ -4685,6 +5272,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (modal === ui.upgradeModal) openModal(ui.upgradeModal, false);
       if (modal === ui.benchModal) openModal(ui.benchModal, false);
       if (modal === ui.supplyModal) openModal(ui.supplyModal, false);
+      if (modal === ui.weeklyOrderModal) openModal(ui.weeklyOrderModal, false);
       if (modal === ui.helpModal) openModal(ui.helpModal, false);
       return;
     }

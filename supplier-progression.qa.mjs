@@ -226,6 +226,11 @@ for (let day = 26; day <= 30; day += 1) {
 }
 
 let slowestSupplierGeneration = 0;
+let slowestSupplierDay = 0;
+let slowestSupplierPass = 0;
+let totalSupplierGeneration = 0;
+let measuredSupplierPasses = 0;
+const repetitionsPerDay = 3;
 for (let day = 1; day <= 100; day += 1) {
   const profile = dailyTradeProfile({ day, inventoryCount: 0, capacity: 16 });
   const customers = generateCustomerBriefs({
@@ -236,14 +241,23 @@ for (let day = 1; day <= 100; day += 1) {
   });
   assert.equal(customers.length, profile.visitorCount, `Day ${day} must fill its visitor queue.`);
 
-  const startedAt = performance.now();
-  const lots = generateSupplierLots({ day, customers, inventory: [], coins: 999, capacity: 16 });
-  slowestSupplierGeneration = Math.max(slowestSupplierGeneration, performance.now() - startedAt);
-  assert.deepEqual(
-    lots,
-    generateSupplierLots({ day, customers, inventory: [], coins: 999, capacity: 16 }),
-    `Day ${day} supplier lots must be deterministic.`,
-  );
+  let lots = null;
+  for (let pass = 1; pass <= repetitionsPerDay; pass += 1) {
+    const startedAt = performance.now();
+    const generated = generateSupplierLots({ day, customers, inventory: [], coins: 999, capacity: 16 });
+    const elapsed = performance.now() - startedAt;
+    totalSupplierGeneration += elapsed;
+    measuredSupplierPasses += 1;
+    if (elapsed > slowestSupplierGeneration) {
+      slowestSupplierGeneration = elapsed;
+      slowestSupplierDay = day;
+      slowestSupplierPass = pass;
+    }
+    assert.ok(elapsed < 250, `Day ${day}, pass ${pass} supplier generation took ${elapsed.toFixed(1)} ms.`);
+    if (lots === null) lots = generated;
+    else assert.deepEqual(generated, lots, `Day ${day} supplier lots must be deterministic on pass ${pass}.`);
+  }
+
   assert.ok(lots.some((lot) => lot.kind === "supplier" && lot.selectable), `Day ${day} needs a valid supplier lot.`);
   lots.filter((lot) => lot.kind === "supplier").forEach((lot) => {
     assert.ok(lot.quantity >= 0 && lot.quantity <= 7);
@@ -255,4 +269,8 @@ for (let day = 1; day <= 100; day += 1) {
 }
 
 assert.ok(slowestSupplierGeneration < 250, `Supplier generation took ${slowestSupplierGeneration.toFixed(1)} ms.`);
-console.log(`supplier/progression QA passed for Days 1-100; slowest supplier pass ${slowestSupplierGeneration.toFixed(1)} ms`);
+console.log(
+  `supplier/progression QA passed for Days 1-100; slowest supplier pass ${slowestSupplierGeneration.toFixed(1)} ms `
+  + `(Day ${slowestSupplierDay}, pass ${slowestSupplierPass}); mean `
+  + `${(totalSupplierGeneration / measuredSupplierPasses).toFixed(2)} ms across ${measuredSupplierPasses} passes`,
+);

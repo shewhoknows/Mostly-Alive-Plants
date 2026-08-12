@@ -260,6 +260,50 @@ export function purchaseExpansion(options = {}) {
   });
 }
 
+/** Return the fixed resale value for an installed shop expansion. */
+export function expansionResaleValue(id) {
+  const expansion = expansionForId(id);
+  if (!expansion) return { coins: 0, bloom: 0 };
+  return {
+    coins: Math.floor(expansion.cost.coins * 0.5),
+    bloom: 0,
+  };
+}
+
+/**
+ * Remove an installed expansion and return part of its cost. Scene and
+ * capacity checks stay in the game layer because they depend on live stock.
+ */
+export function sellExpansion({ id, state, coins = 0, bloom = 0 } = {}) {
+  const expansion = expansionForId(id);
+  const migratedState = migrateExpansionState(state);
+  const safeCoins = nonNegativeInteger(coins);
+  const safeBloom = nonNegativeInteger(bloom);
+  if (!expansion) {
+    return { ok: false, code: "unknown-expansion", message: "This shop upgrade does not exist.", state: migratedState, coins: safeCoins, bloom: safeBloom };
+  }
+  if (!migratedState.purchased[id]) {
+    return { ok: false, code: "not-installed", message: `${expansion.title} is not installed.`, expansion, state: migratedState, coins: safeCoins, bloom: safeBloom };
+  }
+  const purchasedIds = migratedState.purchasedIds.filter((purchasedId) => purchasedId !== id);
+  const nextState = {
+    version: SHOP_EXPANSION_STATE_VERSION,
+    purchased: Object.fromEntries(purchasedIds.map((purchasedId) => [purchasedId, true])),
+    purchasedIds,
+  };
+  const refund = expansionResaleValue(id);
+  return {
+    ok: true,
+    code: "sold",
+    message: `${expansion.title} was sold back.`,
+    expansion,
+    refund,
+    state: nextState,
+    coins: safeCoins + refund.coins,
+    bloom: safeBloom + refund.bloom,
+  };
+}
+
 function hasLovelyExtra(extras) {
   if (typeof extras === "string") return extras.toLowerCase() === "lovely";
   if (Array.isArray(extras)) return extras.some(hasLovelyExtra);

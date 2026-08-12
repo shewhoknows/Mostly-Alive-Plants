@@ -12,7 +12,7 @@ Target session shape:
 - Customers wait indefinitely; passing on a sale is neutral.
 - Plants can become stressed, but never die or decay while the game is closed.
 
-## Implemented foundation — Sustained Shop v2, save version 7
+## Implemented foundation — Sustained Shop v3, save version 8
 
 The commerce-and-neighborhood slice from this plan and the attached 35-day campaign plan is now playable:
 
@@ -24,7 +24,7 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - 12 recurring 3D neighbors, 40 request briefs, and concise **Must have / Would love / Budget** cards;
 - condition- and budget-aware acceptance, protected remaining-customer stock, and remembered visits, purchases, and satisfaction;
 - a Monday-to-Friday calendar, rotating weekly objective and reward, and a dedicated Friday recap;
-- 20 distinct plant species, including four Rare Nursery specimens, plus paced common-plant, customer, and brief unlocks;
+- 26 distinct plant species, including four Rare Nursery specimens, plus paced common-plant, customer, and brief unlocks;
 - daily operating costs, recoverable unpaid bills, a one-time emergency grant, and net-profit reporting;
 - weekly shop projects from Week 3, with rising coin-and-Bloom costs and visible room improvements;
 - extra closing care costs for stock above the daily target from Week 4;
@@ -33,7 +33,10 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - a physical Retail Supply Shelf with reusable Clip Grow Lights, fertilizer, issue treatments, potting soil, and optional customer add-ons;
 - five utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
 - a persistent main-panel Care Bench entry that shows timing, readiness, and active jobs;
-- Bloom reputation standings and migration of older saves into version 7.
+- a separate marked Recovery Station for Rehabilitate jobs;
+- one optional weekly order, Held stock, small neighborhood events, exact return visits, and nursery relationship levels;
+- safe resale of visible shop improvements for half of their coin cost;
+- Bloom reputation standings and migration of older saves into version 8.
 
 The combined direction remains: this repository plan supplies the light business spine, while the attached plan supplies the 35-day campaign, journal, workshops, relationships, and finale. Matching plants to people stays the primary pleasure. Week 1 uses three visitors per day. Week 2 uses four or five. Later weeks rotate between four and six, and the Shop Sign can add one more. Staff management is not part of the combined scope.
 
@@ -213,42 +216,43 @@ This created the first complete management chain using the original room and car
 - Add physical capacity, bench, care, and visitor upgrades.
 - Add repeatable weekly shop projects and closing overstock care.
 
-### Phase 4 — Growing the business — started
+### Phase 4 — Growing the business — in progress
 
 - **Plant-health and Retail Supply Shelf milestone — complete:** three-morning nursery age, visible stress and recovery, deterministic mites and fungus, treatments, fertilizer growth, reusable Clip Grow Lights, and optional supply add-ons.
-- Add optional weekly orders and a small positive or neutral event pool.
+- **Neighborhood commitments milestone — complete:** exact sale follow-ups, one optional weekly order, Held stock, small positive or neutral events, and three supplier relationship levels.
+- **Catalog expansion — complete:** six later-week standard plants bring the catalog to 26 distinct species.
 - Add new shelf modules and movable display fixtures. The first four-slot shelf module is complete.
 - Add upgrade branches that change the room and shop routine. The first six-item permanent branch is complete.
 - Add seasonal demand, larger contracts, and a modest shop expansion.
 
 ## Recommended next implementation slice
 
-The next bounded step is deeper customer orders and neighborhood events:
+The next bounded step is a species journal and custom presentation:
 
-1. add customer follow-ups that refer to the exact species and price band from an earlier sale;
-2. add one optional weekly order with a deposit, a clear Friday deadline, and a Held stock state;
-3. add a small positive or neutral event pool that changes demand for one trait;
-4. connect order and event results to existing customer memory;
-5. add two supplier relationship levels that reveal more rescue stock and improve one lot type.
+1. add a journal that records each owned and sold species, its care facts, and its best sale result;
+2. add a small set of decorative pots with clear coin costs and bounded presentation bonuses;
+3. let the player move selected small fixtures between safe marked room zones;
+4. add one weekly workshop that uses a plant, a supply item, and a short customer group;
+5. connect journal discoveries and workshops to one new weekly objective and two customer follow-ups.
 
 That extends the current chain into:
 
-**forecast and buy → place and care → price and recommend → work the bench → remember → plan for the week**
+**forecast and buy → place and care → price and recommend → work the bench → remember → plan for the week → collect and present**
 
-The species journal, decorative pots, workshops, movable fixtures, and the 35-day finale should follow after this order-and-event slice is tuned.
+Seasonal demand, larger contracts, the back-room expansion, and the 35-day finale should follow after this slice is tuned.
 
-## Save-data direction after version 7
+## Save-data direction after version 8
 
-Version 7 adds permanent shop-expansion state, gated display slots, combined 20-plant capacity, rare supplier access, four specialist plant records, and bounded sale bonuses. Existing inventory, bench jobs, customer history, prices, and version-6 fixtures remain intact.
+Version 8 adds weekly events, optional orders, Held stock, supplier relationship progress, exact returning-customer follow-ups, improvement resale safety, and six standard plant records. Existing inventory, bench jobs, health state, customer history, prices, fixtures, and version-7 shop expansions remain intact.
 
 The plant-health and retail-supply modules add their own versioned migration. Missing health fields receive safe defaults. Retail stock and Clip Grow Light assignments migrate without changing older inventory, finances, or shop upgrades.
 
 Later save versions can extend that foundation with:
 
-- calendar: forecast, event, and optional weekly order;
+- calendar: seasonal forecast, workshops, and larger contracts;
 - plant: decorative pot modifiers and journal records;
 - shop: more fixture unlocks and a featured trait;
-- commerce: supplier relationships, delayed deliveries, an active weekly order, and held stock;
+- commerce: delayed deliveries, bulk orders, and workshop bookings;
 - community: deeper relationship beats, species journal entries, and story flags;
 - operations: workshop schedule and larger room upgrades.
 

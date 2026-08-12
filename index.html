@@ -79,6 +79,30 @@
         </div>
       </header>
 
+      <aside id="weekly-plan-strip" class="weekly-plan-strip" aria-label="This week in the neighborhood">
+        <div class="weekly-event-brief">
+          <span class="weekly-strip-kicker">Neighborhood</span>
+          <strong id="weekly-event-title">A quiet week</strong>
+          <span id="weekly-event-copy">Regular demand in the shop.</span>
+        </div>
+        <button
+          id="weekly-order-button"
+          class="weekly-order-brief"
+          type="button"
+          aria-controls="weekly-order-modal"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+        >
+          <span class="weekly-strip-kicker">Weekly order</span>
+          <strong id="weekly-order-strip-title">No order yet</strong>
+          <span class="weekly-order-brief-meta">
+            <span id="weekly-order-strip-progress">0/0 held</span>
+            <span aria-hidden="true">·</span>
+            <span id="weekly-order-strip-deadline">No deadline</span>
+          </span>
+        </button>
+      </aside>
+
       <aside class="task-card" aria-live="polite">
         <p class="panel-kicker">Today in the shop</p>
         <h2 id="task-title">Open the delivery</h2>
@@ -160,6 +184,21 @@
         </div>
       </div>
 
+      <aside
+        id="rehabilitation-station-label"
+        class="station-identifier rehabilitation-station-label"
+        hidden
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <span class="station-identifier-mark" aria-hidden="true">✚</span>
+        <span class="station-identifier-copy">
+          <span>Separate care area</span>
+          <strong>Rehabilitation Station</strong>
+          <small id="rehabilitation-station-status">Long-stay and rescue plant care</small>
+        </span>
+      </aside>
+
       <div class="action-cluster">
         <div class="rotate-controls">
           <button id="rotate-left" class="round-button" type="button" hidden aria-label="Rotate plant left">↶</button>
@@ -240,6 +279,29 @@
         <p id="supplier-status" class="supplier-status" role="status" aria-live="polite">
           Each lot has its own cost, condition, and assortment.
         </p>
+        <aside
+          id="supplier-relationship"
+          class="supplier-relationship"
+          aria-labelledby="supplier-relationship-title"
+        >
+          <div class="supplier-relationship-copy">
+            <p class="panel-kicker">Nursery relationship</p>
+            <h3 id="supplier-relationship-title">
+              <span id="supplier-relationship-level">Level 1</span>
+              <span id="supplier-relationship-name">New account</span>
+            </h3>
+            <p id="supplier-relationship-perk">Build trust to find better rescue lots.</p>
+          </div>
+          <div class="supplier-relationship-meter">
+            <span id="supplier-relationship-progress-copy">0/3 nursery orders</span>
+            <progress
+              id="supplier-relationship-progress"
+              max="3"
+              value="0"
+              aria-label="Supplier relationship progress"
+            ></progress>
+          </div>
+        </aside>
         <div
           id="supplier-options"
           class="supplier-options"
@@ -262,6 +324,7 @@
           <div><strong>3</strong><p>Read Must have, Would love, and Budget. Care, arrange, or retag a plant to improve the match.</p></div>
           <div><strong>4</strong><p>Select the 3D Care Bench to open its jobs. Rehabilitate clears nursery stress and restores rescue value. Normal care does not. The grow lamp improves new bench jobs.</p></div>
           <div><strong>5</strong><p>Open the Retail Supply Shelf to buy clip lights, fertilizer, and treatments. Keep fertilizer, fungicide, and potting soil ready for customer add-ons.</p></div>
+          <div><strong>6</strong><p>From Week 2, accept one optional order. Hold healthy matching plants, then complete the order by Friday. Neighborhood events also change one type of demand.</p></div>
         </div>
         <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
@@ -348,14 +411,103 @@
       </div>
     </section>
 
+    <section id="weekly-order-modal" class="modal-layer weekly-order-layer" hidden>
+      <div
+        class="modal-card weekly-order-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="weekly-order-title"
+        aria-describedby="weekly-order-summary weekly-order-status"
+        tabindex="-1"
+      >
+        <button id="close-weekly-order" class="modal-close" type="button" aria-label="Close weekly order">×</button>
+        <p class="panel-kicker">Neighborhood order book</p>
+        <h2 id="weekly-order-title">Plan one useful order</h2>
+        <p id="weekly-order-summary" class="weekly-order-summary">
+          Accept one optional order. Hold suitable plants, then finish it by Friday.
+        </p>
+        <p id="weekly-order-status" class="weekly-order-status" role="status" aria-live="polite">
+          Review the request before you use shop stock.
+        </p>
+
+        <div class="weekly-order-workspace">
+          <section class="weekly-order-section weekly-order-offer-panel" aria-labelledby="weekly-order-offer-heading">
+            <div class="weekly-order-section-heading">
+              <h3 id="weekly-order-offer-heading">The offer</h3>
+              <span id="weekly-order-offer-state" class="order-state-chip">New offer</span>
+            </div>
+            <div id="weekly-order-offer" class="weekly-order-offer">
+              <p id="weekly-order-customer" class="weekly-order-customer">A neighborhood customer</p>
+              <h4 id="weekly-order-offer-name">A leafy group order</h4>
+              <p id="weekly-order-request">Hold two suitable plants for collection by Friday.</p>
+              <dl class="weekly-order-terms" aria-label="Weekly order terms">
+                <div><dt>Deadline</dt><dd id="weekly-order-deadline">Friday</dd></div>
+                <div><dt>Deposit</dt><dd id="weekly-order-deposit">0 coins</dd></div>
+                <div><dt>On collection</dt><dd id="weekly-order-reward">0 coins · 0 Bloom</dd></div>
+              </dl>
+            </div>
+            <div id="weekly-order-offer-actions" class="weekly-order-offer-actions" role="group" aria-label="Respond to this weekly order">
+              <button id="accept-weekly-order" class="button button-primary" type="button">Accept order</button>
+              <button id="decline-weekly-order" class="button button-quiet" type="button">Not this week</button>
+            </div>
+          </section>
+
+          <section class="weekly-order-section held-stock-panel" aria-labelledby="held-stock-title">
+            <div class="weekly-order-section-heading">
+              <div>
+                <h3 id="held-stock-title">Held stock</h3>
+                <p id="weekly-order-progress-copy">No plants are held.</p>
+              </div>
+              <span id="weekly-order-deadline-chip" class="order-deadline-chip">Due Friday</span>
+            </div>
+            <progress
+              id="weekly-order-progress"
+              class="weekly-order-progress"
+              max="2"
+              value="0"
+              aria-label="Weekly order plant progress"
+            ></progress>
+            <div id="weekly-order-held-list" class="held-stock-list" aria-live="polite">
+              <p class="held-stock-empty">Choose a suitable shop plant, then hold it for this order.</p>
+            </div>
+            <div id="weekly-order-held-actions" class="held-stock-actions" role="group" aria-label="Weekly order stock actions">
+              <button id="hold-selected-plant" class="button button-primary" type="button" disabled>Hold selected plant</button>
+              <button id="complete-weekly-order" class="button button-quiet" type="button" disabled>Complete order</button>
+            </div>
+            <p class="held-stock-note">Held plants stay in the shop, but regular customers cannot buy them. You can release them before collection.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+
     <section id="upgrade-modal" class="modal-layer" hidden>
       <div class="modal-card upgrade-card-shell" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
         <button id="close-upgrades" class="modal-close" type="button" aria-label="Close upgrades">×</button>
         <p class="panel-kicker">Visible improvements</p>
         <h2 id="upgrade-title">Make the shop your own</h2>
         <p class="modal-intro">Add useful fixtures first. Then grow the shop with more display space, rare plants, and sales decorations.</p>
+        <section id="owned-improvements-section" class="owned-improvements-panel" aria-labelledby="owned-improvements-title">
+          <div class="owned-improvements-heading">
+            <div>
+              <p class="panel-kicker">Manage the room</p>
+              <h3 id="owned-improvements-title">Owned improvements</h3>
+            </div>
+            <span id="owned-improvements-count">0 placed</span>
+          </div>
+          <p id="improvement-refund-policy" class="improvement-refund-policy">
+            Sell or remove an improvement to clear its space. You get half of its coin cost. Bloom is not returned. Future benefits stop when it is removed.
+          </p>
+          <div
+            id="owned-improvement-options"
+            class="upgrade-grid owned-improvement-grid"
+            aria-label="Owned shop improvements"
+            aria-live="polite"
+          >
+            <p class="owned-improvements-empty">You have no removable improvements yet.</p>
+          </div>
+        </section>
         <section aria-labelledby="fixtures-title">
-          <h3 id="fixtures-title" class="upgrade-section-label">Shop fixtures</h3>
+          <h3 id="fixtures-title" class="upgrade-section-label">Available shop fixtures</h3>
           <div id="upgrade-options" class="upgrade-grid"></div>
         </section>
         <section class="expansion-panel" aria-labelledby="expansion-title">
