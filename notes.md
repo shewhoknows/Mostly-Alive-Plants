@@ -143,3 +143,11 @@
 - Hardened older saves by regenerating only unopened legacy briefs against the new unlock pool, retaining partial days, preserving later-unlock plants already owned, replacing stale supplier cards, and immediately saving the repaired version-5 state.
 - Updated `README.md` and `GAMEPLAY_PLAN.md` to mark the commerce and Neighborhood Week v1 slices complete. The next bounded milestone is the care bench: root comfort, repotting, rehabilitation, and propagation.
 - Browser validation covered a clean Monday supplier board, animated cartons, visible pricing, a rejected 23-coin offer against a 22-coin budget, successful retag and sale, the protected three-customer queue, relationship persistence, Tuesday returning dialogue, a Friday recap, Week 2 unlock announcements, and version-4 migration. Static simulation covered ordinary days, low-cash and 10–12-stock supplier routes, every objective metric, target bounds through Week 200, and 100 Boutique weekdays with 300 maximum-price-roll supplier routes.
+
+## 2026-08-12 — Sustained shop systems, engine checkpoint
+
+- Added a deterministic trade profile for each shop day. Week 1 keeps three visitors, Week 2 grows to four or five, and later weeks rotate between four and six visitors. A future shop-sign upgrade can add one more visitor.
+- Added daily operating costs, stock targets, stock-pressure messages, and shipment guidance. These values react to the weekday, week, visitor count, inventory, and capacity.
+- Added a save-safe care bench engine with Repot, Rehabilitate, and Propagate jobs. Jobs use coins and Bloom, take one or two mornings, reserve bench slots, preserve plants safely, and wait if a new propagated plant cannot fit in stock.
+- Repotting improves root comfort and value. Rehabilitation restores health and adds short protection. Propagation creates a tracked juvenile plant that grows for three days before it becomes mature.
+- Static validation covered Weeks 1–20, all generated visitor queues, operating-cost and stock bounds, repeated job starts, insufficient funds, full stock, missing plants, reload-safe jobs, and delayed propagation completion.
