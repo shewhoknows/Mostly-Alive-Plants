@@ -22,6 +22,13 @@ import {
   validateProjectFunding,
 } from "./shop-project-system.js";
 import {
+  SHOP_EXPANSIONS,
+  migrateExpansionState,
+  purchaseExpansion,
+  saleExpansionBonus,
+  validateExpansionPurchase,
+} from "./shop-expansion-system.js";
+import {
   BENCH_JOB_COSTS,
   BENCH_JOB_DURATIONS,
   BENCH_JOB_TYPES,
@@ -54,6 +61,10 @@ const MAX_OUTSTANDING_COSTS = 45;
 
   function coinCopy(value) {
     return `${value} ${Math.abs(Number(value)) === 1 ? "coin" : "coins"}`;
+  }
+
+  function reservedCostCopy(value) {
+    return `${coinCopy(value)} ${Math.abs(Number(value)) === 1 ? "is" : "are"} set aside for shop bills`;
   }
 
 function seeded(seed) {
@@ -147,6 +158,7 @@ function freshState() {
     outstandingCosts: 0,
     neighborhoodGrantUsed: false,
     projectState: createDefaultProjectState(),
+    expansionState: migrateExpansionState(),
     benchState: createDefaultBenchState(),
     upgrades: {
       growLamp: false,
@@ -164,6 +176,7 @@ function loadState() {
     if (!value || !Array.isArray(value.inventory)) return freshState();
     const base = freshState();
     const oldVersion = Number(value.version) || 1;
+    const migratedExpansion = migrateExpansionState(value.expansionState);
     const customers = Array.isArray(value.customers) ? value.customers.map((customer, index) => {
       const species = SPECIES.find((item) => item.name === customer.speciesHint) || SPECIES[index % SPECIES.length];
       const named = CUSTOMERS.find((item) => item.id === customer.id || item.name === customer.name) || CUSTOMERS[index % CUSTOMERS.length];
@@ -198,6 +211,7 @@ function loadState() {
       const species = speciesForRecord(plant);
       const validSlot = Number.isInteger(plant.slot)
         && SLOT_DATA[plant.slot]
+        && (!SLOT_DATA[plant.slot].requiresExpansion || migratedExpansion.purchased[SLOT_DATA[plant.slot].requiresExpansion])
         && !occupiedSlots.has(plant.slot);
       if (validSlot) occupiedSlots.add(plant.slot);
       const colorShift = Number.isFinite(plant.colorShift) ? plant.colorShift : 0;
@@ -260,10 +274,10 @@ function loadState() {
       ? { ...createWeeklyObjective(calendar.week), ...value.weeklyObjective }
       : createWeeklyObjective(calendar.week);
     const savedUpgrades = { ...base.upgrades, ...(value.upgrades || {}) };
-    const inventoryCapacity = Number.isFinite(value.inventoryCapacity)
-      ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity)
-      : INVENTORY_CAPACITY;
-    const upgradedCapacity = savedUpgrades.deliveryRack ? Math.max(16, inventoryCapacity) : inventoryCapacity;
+    const fixtureCapacity = INVENTORY_CAPACITY
+      + (savedUpgrades.deliveryRack ? 4 : 0)
+      + (migratedExpansion.purchased["display-shelves"] ? 4 : 0);
+    const upgradedCapacity = Math.max(fixtureCapacity, Math.min(20, inventory.length));
     const migratedBench = migrateBenchState(value.benchState);
     const reconciledBench = reconcileBenchInventory({
       benchState: {
@@ -328,6 +342,7 @@ function loadState() {
       outstandingCosts: Math.min(MAX_OUTSTANDING_COSTS, Math.max(0, Math.floor(Number(value.outstandingCosts) || 0))),
       neighborhoodGrantUsed: Boolean(value.neighborhoodGrantUsed),
       projectState: migrateProjectState(value.projectState),
+      expansionState: migratedExpansion,
       benchState: reconciledBench.benchState,
       upgrades: savedUpgrades,
       customers: migratedCustomers,
@@ -421,6 +436,8 @@ document.addEventListener("DOMContentLoaded", () => {
     nextDay: $("next-day"),
     upgradeModal: $("upgrade-modal"),
     upgradeOptions: $("upgrade-options"),
+    expansionOptions: $("expansion-options"),
+    expansionProgress: $("expansion-progress"),
     projectPanel: $("project-panel"),
     projectTitle: $("project-title"),
     projectCopy: $("project-copy"),
@@ -430,6 +447,8 @@ document.addEventListener("DOMContentLoaded", () => {
     upgradeButton: $("upgrade-button"),
     arrangeButton: $("arrange-button"),
     benchButton: $("bench-button"),
+    benchOverview: $("bench-overview"),
+    benchOverviewStatus: $("bench-overview-status"),
     benchModal: $("bench-modal"),
     benchSummary: $("bench-summary"),
     benchStatus: $("bench-status"),
@@ -451,6 +470,14 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const state = loadState();
+
+  function hasExpansion(id) {
+    return Boolean(state.expansionState?.purchased?.[id]);
+  }
+
+  function slotIsActive(slot) {
+    return Boolean(slot && (!slot.requiresExpansion || hasExpansion(slot.requiresExpansion)));
+  }
 
   function reservedShopCoins() {
     return optionalSpendingBudget(state).reserved;
@@ -492,9 +519,13 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(-4.7, 0.03, 1.15),
     new THREE.Vector3(-3.65, 0.03, 1.25),
     new THREE.Vector3(3.42, 0.03, -0.55),
-    new THREE.Vector3(3.48, 0.03, 0.35),
-    new THREE.Vector3(5.38, 0.03, 1.48),
-    new THREE.Vector3(4.42, 0.03, 1.45),
+    new THREE.Vector3(2.6, 0.03, -0.1),
+    new THREE.Vector3(-4.75, 0.03, -2.15),
+    new THREE.Vector3(-2.65, 0.03, -1.65),
+    new THREE.Vector3(-0.25, 0.03, -1.7),
+    new THREE.Vector3(-1.55, 0.03, 3.8),
+    new THREE.Vector3(-3.35, 0.03, 3.85),
+    new THREE.Vector3(-5.0, 0.03, -0.55),
   ];
 
   const run = {
@@ -572,12 +603,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let choice = possible[Math.floor(rng() * possible.length)];
     if (!choice) {
       const fallback = [];
-      availableStock.forEach((plant) => SLOT_DATA.forEach((slot) => {
+      availableStock.forEach((plant) => SLOT_DATA.filter(slotIsActive).forEach((slot) => {
         if (SLOT_DATA[plant.slot]?.zone === slot.zone) return;
         const trait = plant.traits[Math.floor(rng() * plant.traits.length)];
         fallback.push({ trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` });
       }));
-      deliveries.forEach((species) => SLOT_DATA.forEach((slot) => {
+      deliveries.forEach((species) => SLOT_DATA.filter(slotIsActive).forEach((slot) => {
         const trait = species.traits[Math.floor(rng() * species.traits.length)];
         fallback.push({ trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` });
       }));
@@ -619,6 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
           inventory: state.inventory,
           coins: state.coins,
           capacity: state.inventoryCapacity,
+          rareNursery: hasExpansion("rare-nursery"),
         });
       }
       if (!state.displayGoal && state.crateQueue.length) state.displayGoal = makeDisplayGoal(seeded(state.day * 1999 + 73));
@@ -654,6 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
       inventory: state.inventory,
       coins: state.coins,
       capacity: state.inventoryCapacity,
+      rareNursery: hasExpansion("rare-nursery"),
     });
     save();
   }
@@ -820,6 +853,7 @@ document.addEventListener("DOMContentLoaded", () => {
     makeDeliveryRack(woodMat, darkWood);
     makeBenchShelf(woodMat, brass);
     makeShopSignUpgrade(darkWood);
+    makeShopExpansions(woodMat, darkWood, brass, cream, peach);
     makeShopProjects(woodMat, darkWood, brass);
     makeSelectionRing();
     rebuildPlants();
@@ -859,8 +893,9 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       hitTarget.position.z = 0.002;
       object.add(hitTarget);
+      object.visible = slotIsActive(slot);
       world.add(object);
-      interactive.push(object);
+      if (slotIsActive(slot)) interactive.push(object);
       slotObjects.set(index, object);
     });
   }
@@ -872,7 +907,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const cardboardEdge = material(0x8c5f3c);
     const packingPaper = material(0xe7c985);
 
-    for (let layer = 0; layer < 7; layer += 1) {
+    for (let layer = 0; layer < 8; layer += 1) {
       const carton = new THREE.Group();
       carton.name = `carton-${layer}`;
       carton.position.set((layer % 2) * 1.18, Math.floor(layer / 2) * 0.65, -Math.floor(layer / 2) * 0.08);
@@ -1005,6 +1040,89 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(root);
   }
 
+  function makeShopExpansions(woodMat, darkWood, brass, cream, peach) {
+    const expansionVisible = (id) => hasExpansion(id);
+
+    const shelves = new THREE.Group();
+    [[0.82, 0.9], [2, 2.08]].forEach(([boardY, lipY]) => {
+      box(shelves, [0.86, 0.16, 1.85], [5.43, boardY, 1.43], woodMat);
+      box(shelves, [0.1, 0.12, 1.95], [5.79, lipY, 1.43], darkWood);
+    });
+    [[5.08, 0.55], [5.08, 2.3], [5.78, 0.55], [5.78, 2.3]].forEach(([x, z]) => {
+      box(shelves, [0.11, 2.2, 0.11], [x, 1.1, z], darkWood);
+    });
+    shelves.name = "expansion-display-shelves";
+    shelves.visible = expansionVisible("display-shelves");
+    world.add(shelves);
+
+    const rare = new THREE.Group();
+    const rarePlaque = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.55, 0.78),
+      material(0xf0e6cc, { map: textTexture("RARE NURSERY", "SPECIALIST MEMBER") }),
+    );
+    rarePlaque.position.set(-5.91, 3.95, 1.08);
+    rarePlaque.rotation.y = Math.PI / 2;
+    rare.add(rarePlaque);
+    box(rare, [0.08, 0.96, 1.73], [-5.97, 3.95, 1.08], darkWood);
+    rare.name = "expansion-rare-nursery";
+    rare.visible = expansionVisible("rare-nursery");
+    world.add(rare);
+
+    const bell = new THREE.Group();
+    cylinder(bell, 0.3, 0.34, 0.08, [1.28, 1.45, 1.22], darkWood, 16);
+    const bellDome = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      brass,
+    );
+    bellDome.position.set(1.28, 1.49, 1.22);
+    bellDome.castShadow = true;
+    bell.add(bellDome);
+    cylinder(bell, 0.055, 0.07, 0.09, [1.28, 1.82, 1.22], brass, 10);
+    bell.name = "expansion-checkout-bell";
+    bell.visible = expansionVisible("checkout-bell");
+    world.add(bell);
+
+    const ceramic = new THREE.Group();
+    box(ceramic, [1.42, 0.92, 0.1], [5.03, 3.95, -4.86], material(0xd7a879));
+    const ceramicFace = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.22, 0.72),
+      material(0xf4ead0, { map: textTexture("GROWN WITH CARE", "BOUTIQUE DISPLAY") }),
+    );
+    ceramicFace.position.set(5.03, 3.95, -4.79);
+    ceramic.add(ceramicFace);
+    ceramic.name = "expansion-ceramic-sign";
+    ceramic.visible = expansionVisible("ceramic-sign");
+    world.add(ceramic);
+
+    const garden = new THREE.Group();
+    box(garden, [0.36, 0.46, 1.75], [-5.73, 2.05, 2.05], peach);
+    [-0.64, -0.2, 0.24, 0.65].forEach((offset, index) => {
+      cylinder(garden, 0.025, 0.035, 0.68 + (index % 2) * 0.18, [-5.68, 2.55 + (index % 2) * 0.09, 2.05 + offset], material(0x67845d), 6);
+      const bloom = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 6),
+        material([0xe5a18b, 0xe8cf76, 0xb99ac4, 0xf0b77d][index]),
+      );
+      bloom.scale.set(0.65, 0.38, 1);
+      bloom.position.set(-5.65, 2.91 + (index % 2) * 0.18, 2.05 + offset);
+      bloom.castShadow = true;
+      garden.add(bloom);
+    });
+    garden.name = "expansion-scent-garden";
+    garden.visible = expansionVisible("scent-garden");
+    world.add(garden);
+
+    const wrapping = new THREE.Group();
+    box(wrapping, [0.78, 0.24, 0.72], [3.35, 1.51, 1.22], cream);
+    const paperRoll = cylinder(wrapping, 0.12, 0.12, 0.72, [3.35, 1.78, 1.22], material(0xd58f6b), 12);
+    paperRoll.rotation.z = Math.PI / 2;
+    [3.08, 3.35, 3.62].forEach((x, index) => {
+      cylinder(wrapping, 0.08, 0.08, 0.09, [x, 1.69, 1.56], material([0x7aa6a0, 0xe0b945, 0x9a739d][index]), 12);
+    });
+    wrapping.name = "expansion-wrapping-station";
+    wrapping.visible = expansionVisible("wrapping-station");
+    world.add(wrapping);
+  }
+
   function makeShopProjects(woodMat, darkWood, brass) {
     const countOf = (id) => Math.max(0, Number(state.projectState?.counts?.[id]) || 0);
     const leafyGreen = material(0x78966d);
@@ -1093,7 +1211,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function lightFit(plant, slotIndex = plant?.slot) {
     const spec = speciesOf(plant);
     const preferred = spec.preferredLight;
-    const actual = SLOT_DATA[slotIndex]?.lightLevel;
+    const slot = SLOT_DATA[slotIndex];
+    const actual = slotIsActive(slot) ? slot.lightLevel : null;
     if (!actual) return { level: "unplaced", label: "light undecided", color: 0xffd15d };
     if (preferred === actual) return { level: "ideal", label: `ideal ${actual} light`, color: 0x75a86e };
     if (spec.toleratedLight?.includes(actual)) return { level: "tolerable", label: `${actual} light · tolerable`, color: 0xe2bd5d };
@@ -1153,7 +1272,7 @@ document.addEventListener("DOMContentLoaded", () => {
     root.userData.lifeScale = plant.lifeStage === "juvenile" ? 0.68 : 1;
     root.updateMatrixWorld(true);
     root.userData.modelTop = new THREE.Box3().setFromObject(root).max.y;
-    const home = SLOT_DATA[plant.slot];
+    const home = slotIsActive(SLOT_DATA[plant.slot]) ? SLOT_DATA[plant.slot] : null;
     root.userData.looseScale = 0.78 * root.userData.lifeScale;
     root.scale.setScalar(home ? scaleForSlot(root, home) : root.userData.looseScale);
     if (!plant.benchStatus) interactive.push(root);
@@ -1193,7 +1312,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let loose = 0;
     state.inventory.forEach((plant) => {
       const object = createPlant(plant);
-      if (Number.isInteger(plant.slot) && SLOT_DATA[plant.slot]) {
+      if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
         const slot = SLOT_DATA[plant.slot];
         object.position.set(slot.x, slot.y, slot.z);
       } else {
@@ -1231,6 +1350,14 @@ document.addEventListener("DOMContentLoaded", () => {
       .map((plant) => [plant.slot, plant]));
     const carriedPlant = state.inventory.find((plant) => plant.id === run.carried);
     slotObjects.forEach((slot, index) => {
+      if (!slotIsActive(SLOT_DATA[index])) {
+        const interactiveIndex = interactive.indexOf(slot);
+        if (interactiveIndex >= 0) interactive.splice(interactiveIndex, 1);
+        slot.visible = false;
+        slot.userData.occupantId = null;
+        return;
+      }
+      if (!interactive.includes(slot)) interactive.push(slot);
       const available = !occupants.has(index);
       const swapTarget = Boolean(carriedPlant && occupants.has(index) && (run.arranging || state.phase === "preparation"));
       const fit = carriedPlant ? lightFit(carriedPlant, index) : null;
@@ -1313,6 +1440,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.projectFund?.addEventListener("click", fundCurrentProject);
     ui.closeUpgrades?.addEventListener("click", () => openModal(ui.upgradeModal, false));
     ui.benchButton?.addEventListener("click", () => openModal(ui.benchModal, true));
+    ui.benchOverview?.addEventListener("click", () => openModal(ui.benchModal, true));
     ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
     ui.helpButton?.addEventListener("click", () => openModal(ui.helpModal, true));
     ui.closeHelp?.addEventListener("click", () => openModal(ui.helpModal, false));
@@ -1377,6 +1505,7 @@ document.addEventListener("DOMContentLoaded", () => {
         inventory: state.inventory,
         coins: state.coins,
         capacity: state.inventoryCapacity,
+        rareNursery: hasExpansion("rare-nursery"),
       });
     }
     renderSupplierBoard();
@@ -1413,7 +1542,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const arrivals = calendar.isMonday && calendar.week > 1 && arrivalNames.length
         ? `New this week: ${arrivalNames.join(" · ")}. `
         : "";
-      ui.supplierStatus.textContent = `${arrivals}${weeklyObjectiveLabel(state.weeklyObjective)}. Choose one delivery; unsold plants stay in your shop.`;
+      const rareAccess = hasExpansion("rare-nursery")
+        ? "Your Rare Nursery Collection is listed as an extra choice. "
+        : "";
+      ui.supplierStatus.textContent = `${arrivals}${rareAccess}${weeklyObjectiveLabel(state.weeklyObjective)}. Choose one delivery; unsold plants stay in your shop.`;
     }
     ui.supplierOptions.replaceChildren();
     state.supplierOptions.forEach((lot, index) => {
@@ -1454,6 +1586,12 @@ document.addEventListener("DOMContentLoaded", () => {
       capacity.className = "supplier-badge";
       capacity.textContent = fits ? `${lot.speciesNames?.length || 0} spaces used` : "Not enough space";
       badges.append(condition, capacity);
+      if (lot.rareCollection) {
+        const rareBadge = document.createElement("span");
+        rareBadge.className = "supplier-badge supplier-badge-rare";
+        rareBadge.textContent = "Special plants";
+        badges.append(rareBadge);
+      }
       if (!affordable) {
         const unavailable = document.createElement("span");
         unavailable.className = "supplier-badge";
@@ -1585,7 +1723,10 @@ document.addEventListener("DOMContentLoaded", () => {
     element.hidden = !open;
     element.classList.toggle("is-open", open);
     element.setAttribute("aria-hidden", String(!open));
-    if (element === ui.benchModal && ui.benchButton) ui.benchButton.setAttribute("aria-expanded", String(open));
+    if (element === ui.benchModal) {
+      if (ui.benchButton) ui.benchButton.setAttribute("aria-expanded", String(open));
+      if (ui.benchOverview) ui.benchOverview.setAttribute("aria-expanded", String(open));
+    }
     const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.report, ui.supplierBoard]
       .some((modal) => modal && !modal.hidden);
     if (ui.game) ui.game.inert = anyModalOpen;
@@ -1631,9 +1772,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   function benchValidation(type, plant) {
-    if (state.phase !== "preparation") {
+    if (state.phase !== "preparation" && state.phase !== "supply") {
       return { ok: false, message: "Start bench work during morning preparation." };
     }
+    if (state.phase === "supply") return { ok: false, message: "Choose today’s nursery shipment first." };
     if (state.crates > 0 || run.crateAnimation) {
       return { ok: false, message: "Open every carton before bench work starts." };
     }
@@ -1643,7 +1785,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return {
         ok: false,
         code: "shop-cost-reserve",
-        message: `${coinCopy(reservedShopCoins())} are set aside for shop bills. You need ${coinCopy(jobCost - freeCoins)} more for this job.`,
+        message: `${reservedCostCopy(reservedShopCoins())}. You need ${coinCopy(jobCost - freeCoins)} more for this job.`,
       };
     }
     const result = validateBenchJob({
@@ -1692,12 +1834,20 @@ document.addEventListener("DOMContentLoaded", () => {
       run.benchPlantId = availablePlants[0]?.id || null;
     }
     const selectedPlant = state.inventory.find((plant) => plant.id === run.benchPlantId) || null;
+    const canStartJobs = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
+    const phaseGuidance = state.phase === "supply"
+      ? "Choose today’s nursery shipment first."
+      : state.phase === "preparation" && state.crates > 0
+        ? `Open ${state.crates} more ${state.crates === 1 ? "carton" : "cartons"} before bench work starts.`
+        : canStartJobs
+          ? "The bench is ready. Choose one plant and one job."
+          : "View active jobs now. New jobs start during tomorrow’s preparation.";
     if (ui.benchSummary) {
       const reserve = reservedShopCoins();
-      ui.benchSummary.textContent = `${jobs.length}/${state.benchState.slotCount} bench slots in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${coinCopy(reserve)} are set aside for shop bills.` : ""}`;
+      ui.benchSummary.textContent = `${phaseGuidance} ${jobs.length}/${state.benchState.slotCount} bench slots are in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""}`;
     }
     if (ui.benchStatus) {
-      ui.benchStatus.textContent = run.benchMessage;
+      ui.benchStatus.textContent = canStartJobs ? run.benchMessage : phaseGuidance;
       ui.benchStatus.dataset.tone = jobs.length >= state.benchState.slotCount ? "warning" : "";
     }
     ui.benchPlants.replaceChildren();
@@ -1755,14 +1905,22 @@ document.addEventListener("DOMContentLoaded", () => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "bench-job";
-      button.disabled = !validation.ok;
+      button.setAttribute("aria-disabled", String(!validation.ok));
       button.title = validation.ok ? info.copy : validation.message;
       const name = document.createElement("strong");
       name.textContent = info.name;
       const detail = document.createElement("small");
       detail.textContent = `${cost.coins} coins${cost.bloom ? ` + ${cost.bloom} Bloom` : ""} · ${duration} ${duration === 1 ? "morning" : "mornings"}. ${validation.ok ? info.copy : validation.message}`;
       button.append(name, detail);
-      button.addEventListener("click", () => startSelectedBenchJob(type));
+      button.addEventListener("click", () => {
+        if (!validation.ok) {
+          run.benchMessage = validation.message;
+          if (ui.benchStatus) ui.benchStatus.textContent = validation.message;
+          sound("error");
+          return;
+        }
+        startSelectedBenchJob(type);
+      });
       ui.benchActions.append(button);
     });
   }
@@ -1889,7 +2047,89 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.upgradeOptions.append(card);
     };
     upgrades.forEach(addCard);
+    renderExpansionOptions();
     renderProjectPanel();
+  }
+
+  function renderExpansionOptions() {
+    if (!ui.expansionOptions) return;
+    ui.expansionOptions.replaceChildren();
+    const calendar = calendarForDay(state.day);
+    const ownedCount = SHOP_EXPANSIONS.filter((expansion) => hasExpansion(expansion.id)).length;
+    if (ui.expansionProgress) ui.expansionProgress.textContent = `${ownedCount}/${SHOP_EXPANSIONS.length} added`;
+
+    SHOP_EXPANSIONS.forEach((expansion) => {
+      const owned = hasExpansion(expansion.id);
+      const validation = validateExpansionPurchase({
+        id: expansion.id,
+        week: calendar.week,
+        state: state.expansionState,
+        coins: state.coins,
+        bloom: state.bloom,
+        reservedCoins: reservedShopCoins(),
+      });
+      const locked = validation.code === "locked";
+      const card = document.createElement("article");
+      card.className = `upgrade-card expansion-card${owned ? " is-owned" : ""}${locked ? " is-locked" : ""}`;
+      const kicker = document.createElement("span");
+      kicker.className = "expansion-card-kicker";
+      kicker.textContent = expansion.category;
+      const heading = document.createElement("h3");
+      heading.textContent = expansion.title;
+      const effect = document.createElement("p");
+      effect.className = "expansion-effect";
+      effect.textContent = expansion.effectLabel;
+      const detail = document.createElement("p");
+      detail.textContent = expansion.copy;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button-primary upgrade-buy";
+      const costCopy = `${expansion.cost.coins} coins · ${expansion.cost.bloom} Bloom`;
+      button.textContent = owned
+        ? "Added to the shop ✓"
+        : locked
+          ? `Unlocks in Week ${expansion.unlockWeek}`
+          : validation.ok
+            ? `Add · ${costCopy}`
+            : validation.message;
+      button.disabled = !validation.ok;
+      button.addEventListener("click", () => buyExpansion(expansion.id));
+      card.append(kicker, heading, effect, detail, button);
+      ui.expansionOptions.append(card);
+    });
+  }
+
+  function buyExpansion(id) {
+    const result = purchaseExpansion({
+      id,
+      week: calendarForDay(state.day).week,
+      state: state.expansionState,
+      coins: state.coins,
+      bloom: state.bloom,
+      reservedCoins: reservedShopCoins(),
+    });
+    if (!result.ok) {
+      sound("error");
+      toast(result.message);
+      renderExpansionOptions();
+      return;
+    }
+    state.expansionState = result.state;
+    state.coins = result.coins;
+    state.bloom = result.bloom;
+    if (id === "display-shelves") {
+      const requiredCapacity = INVENTORY_CAPACITY + (state.upgrades.deliveryRack ? 4 : 0) + 4;
+      state.inventoryCapacity = Math.max(requiredCapacity, state.inventoryCapacity);
+      rebuildPlants();
+      updateSlotGlow();
+    }
+    const object = world.getObjectByName(result.expansion.objectName);
+    if (object) object.visible = true;
+    save();
+    sound("upgrade");
+    toast(`${result.expansion.title} is now in the shop. ${result.expansion.effectLabel}.`, 4300);
+    renderUpgrades();
+    updateUi();
   }
 
   function renderProjectPanel() {
@@ -1944,7 +2184,7 @@ document.addEventListener("DOMContentLoaded", () => {
       sound("error");
       const reserve = reservedShopCoins();
       toast(reserve && spendableValidation.code === "insufficient-resources"
-        ? `${coinCopy(reserve)} are set aside for shop bills. ${spendableValidation.message}`
+        ? `${reservedCostCopy(reserve)}. ${spendableValidation.message}`
         : spendableValidation.message);
       renderProjectPanel();
       return;
@@ -1988,14 +2228,15 @@ document.addEventListener("DOMContentLoaded", () => {
         missingBloom ? `${missingBloom} more Bloom` : "",
       ].filter(Boolean).join(" and ");
       const reserve = reservedShopCoins();
-      toast(`${reserve ? `${coinCopy(reserve)} are set aside for shop bills. ` : ""}This upgrade needs ${needs}.`);
+      toast(`${reserve ? `${reservedCostCopy(reserve)}. ` : ""}This upgrade needs ${needs}.`);
       return;
     }
     state.coins -= upgrade.coins;
     state.bloom -= upgrade.bloom;
     state.upgrades[upgrade.key] = true;
     if (upgrade.key === "deliveryRack") {
-      state.inventoryCapacity = Math.max(16, state.inventoryCapacity);
+      const requiredCapacity = INVENTORY_CAPACITY + 4 + (hasExpansion("display-shelves") ? 4 : 0);
+      state.inventoryCapacity = Math.max(requiredCapacity, state.inventoryCapacity);
       rebuildPlants();
     }
     if (upgrade.key === "benchShelf") {
@@ -2197,6 +2438,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const carried = state.inventory.find((plant) => plant.id === carriedId);
     const other = state.inventory.find((plant) => plant.id === targetId);
     if (!carried || !other || carried.benchStatus || other.benchStatus || !Number.isInteger(other.slot)) return;
+    if (!slotIsActive(SLOT_DATA[other.slot])) return;
     if (!Number.isInteger(run.moveOrigin)) {
       const destinationIndex = other.slot;
       const destination = SLOT_DATA[destinationIndex];
@@ -2423,7 +2665,7 @@ document.addEventListener("DOMContentLoaded", () => {
     toast(plant.hydration < 42
       ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
       : lastCarton
-        ? `${plant.species}! Last carton open. Care, arrange, then use Open the shop when ready.`
+        ? `${plant.species}! Last carton open. The Care Bench is ready for Repot, Rehabilitate, or Propagate work.`
         : `${plant.species}! A little rumpled, fundamentally promising.`);
     updateUi();
   }
@@ -2433,12 +2675,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const object = plant ? plantObjects.get(plant.id) : null;
     if (plant && state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)) {
       const goalIndex = SLOT_DATA.findIndex((slot, index) => !used.has(index)
+        && slotIsActive(slot)
         && slot.zone === state.displayGoal.zone
         && (!object || scaleForSlot(object, slot) >= slot.size * 0.74));
       if (goalIndex >= 0) return goalIndex;
     }
     if (plant) {
       const idealIndex = SLOT_DATA.findIndex((slot, index) => !used.has(index)
+        && slotIsActive(slot)
         && lightFit(plant, index).level === "ideal"
         && (!object || scaleForSlot(object, slot) >= slot.size * 0.74));
       if (idealIndex >= 0) return idealIndex;
@@ -2446,17 +2690,20 @@ document.addEventListener("DOMContentLoaded", () => {
     for (let index = 0; index < SLOT_DATA.length; index += 1) {
       if (used.has(index)) continue;
       const slot = SLOT_DATA[index];
+      if (!slotIsActive(slot)) continue;
       if (object && scaleForSlot(object, slot) < slot.size * 0.74) continue;
       return index;
     }
-    for (let index = 0; index < SLOT_DATA.length; index += 1) if (!used.has(index)) return index;
+    for (let index = 0; index < SLOT_DATA.length; index += 1) {
+      if (!used.has(index) && slotIsActive(SLOT_DATA[index])) return index;
+    }
     return null;
   }
 
   function placePlant(id, slotIndex) {
     const plant = state.inventory.find((item) => item.id === id);
     const target = SLOT_DATA[slotIndex];
-    if (!plant || plant.benchStatus || !target) return;
+    if (!plant || plant.benchStatus || !slotIsActive(target)) return;
     if (state.inventory.some((item) => item.slot === slotIndex && item.id !== id)) {
       toast("That spot already has a tenant.");
       return;
@@ -2622,7 +2869,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     run.busy = true;
     const perfect = extras === 3;
-    const payout = price;
+    const expansionBonus = saleExpansionBonus({
+      state: state.expansionState,
+      priceBand: band,
+      perfect,
+      extras: extras > 0 ? ["lovely"] : [],
+      basePayout: price,
+    });
+    const payout = price + expansionBonus;
     const satisfaction = 1 + extras + (idealLight ? 1 : 0) + (band === "quick" ? 1 : 0);
     const delighted = satisfaction >= 4;
     const bloomReward = 2 + extras;
@@ -2686,7 +2940,8 @@ document.addEventListener("DOMContentLoaded", () => {
     run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
     sound("sale");
-    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${payout} coins.${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
+    const shopBonusCopy = expansionBonus ? ` Shop details add ${expansionBonus} bonus ${expansionBonus === 1 ? "coin" : "coins"}.` : "";
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -3040,9 +3295,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ui.upgradeButton) {
       const project = projectForWeek(calendar.week, state.projectState);
       const projectWaiting = Boolean(project && !project.funded);
-      ui.upgradeButton.classList.toggle("has-project", projectWaiting);
-      ui.upgradeButton.title = projectWaiting ? `${project.title} is available this week` : "Shop upgrades";
-      ui.upgradeButton.setAttribute("aria-label", projectWaiting ? `Shop upgrades, ${project.title} is available` : "Shop upgrades");
+      const expansionWaiting = SHOP_EXPANSIONS.some((expansion) => calendar.week >= expansion.unlockWeek && !hasExpansion(expansion.id));
+      const improvementWaiting = projectWaiting || expansionWaiting;
+      const waitingLabel = projectWaiting ? `${project.title} is available this week` : "New permanent shop growth is available";
+      ui.upgradeButton.classList.toggle("has-project", improvementWaiting);
+      ui.upgradeButton.title = improvementWaiting ? waitingLabel : "Shop upgrades";
+      ui.upgradeButton.setAttribute("aria-label", improvementWaiting ? `Shop upgrades, ${waitingLabel}` : "Shop upgrades");
     }
     if (ui.tradeDemand) ui.tradeDemand.textContent = `${state.customers.length || trade.visitorCount} visitors`;
     if (ui.tradeCost) {
@@ -3105,6 +3363,27 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.benchButton.title = jobs ? `Care bench · ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Care bench";
       ui.benchButton.setAttribute("aria-label", jobs ? `Open the care bench, ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Open the care bench");
     }
+    if (ui.benchOverview) {
+      const jobs = state.benchState?.jobs?.length || 0;
+      const benchReady = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
+      ui.benchOverview.hidden = !run.started;
+      ui.benchOverview.disabled = false;
+      ui.benchOverview.classList.toggle("has-jobs", jobs > 0);
+      ui.benchOverview.classList.toggle("is-ready", benchReady);
+      if (ui.benchOverviewStatus) {
+        if (jobs) {
+          ui.benchOverviewStatus.textContent = `${jobs} active ${jobs === 1 ? "job" : "jobs"}. Open the bench to check completion days.`;
+        } else if (benchReady) {
+          ui.benchOverviewStatus.textContent = "Ready now. Choose a plant and start Repot, Rehabilitate, or Propagate.";
+        } else if (state.phase === "preparation") {
+          ui.benchOverviewStatus.textContent = `Open ${state.crates} more ${state.crates === 1 ? "carton" : "cartons"}, then start a bench job.`;
+        } else if (state.phase === "supply") {
+          ui.benchOverviewStatus.textContent = "Choose a shipment first. Bench jobs start during preparation.";
+        } else {
+          ui.benchOverviewStatus.textContent = "View jobs now. New jobs start during tomorrow’s preparation.";
+        }
+      }
+    }
     if (ui.openShop) {
       const readyToOpen = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
       ui.openShop.hidden = !readyToOpen;
@@ -3140,12 +3419,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const condition = conditionOf(plant);
         const fit = lightFit(plant);
         const helpfulCare = spec.beneficialCare.join(" · ");
+        const specialCopy = spec.special ? " · rare nursery specimen" : "";
         const goalFit = state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)
           ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
           : "";
         title = plant.species;
         const growth = plant.lifeStage === "juvenile" ? ` · juvenile, ${plant.maturityDaysRemaining} mornings to mature` : "";
-        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label}${growth} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;

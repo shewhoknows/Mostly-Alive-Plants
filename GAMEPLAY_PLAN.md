@@ -12,7 +12,7 @@ Target session shape:
 - Customers wait indefinitely; passing on a sale is neutral.
 - Plants can become stressed, but never die or decay while the game is closed.
 
-## Implemented foundation — Sustained Shop v1, save version 6
+## Implemented foundation — Sustained Shop v2, save version 7
 
 The commerce-and-neighborhood slice from this plan and the attached 35-day campaign plan is now playable:
 
@@ -24,13 +24,14 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - 12 recurring 3D neighbors, 40 request briefs, and concise **Must have / Would love / Budget** cards;
 - condition- and budget-aware acceptance, protected remaining-customer stock, and remembered visits, purchases, and satisfaction;
 - a Monday-to-Friday calendar, rotating weekly objective and reward, and a dedicated Friday recap;
-- 16 distinct plant species and paced plant, customer, and brief unlocks across the opening weeks;
+- 20 distinct plant species, including four Rare Nursery specimens, plus paced common-plant, customer, and brief unlocks;
 - daily operating costs, recoverable unpaid bills, a one-time emergency grant, and net-profit reporting;
 - weekly shop projects from Week 3, with rising coin-and-Bloom costs and visible room improvements;
 - extra closing care costs for stock above the daily target from Week 4;
 - a Care Bench with persistent Repot, Rehabilitate, and Propagate jobs, root-bound stock, and juvenile plants;
-- five physical upgrades: Grow Lamp, Rain Barrel, Delivery Rack, Bench Shelf, and Shop Sign;
-- Bloom reputation standings and migration of older saves into version 6.
+- five utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
+- a persistent main-panel Care Bench entry that shows timing, readiness, and active jobs;
+- Bloom reputation standings and migration of older saves into version 7.
 
 The combined direction remains: this repository plan supplies the light business spine, while the attached plan supplies the 35-day campaign, journal, workshops, relationships, and finale. Matching plants to people stays the primary pleasure. Week 1 uses three visitors per day. Week 2 uses four or five. Later weeks rotate between four and six, and the Shop Sign can add one more. Staff management is not part of the combined scope.
 
@@ -55,13 +56,13 @@ The morning offers three supplier cards:
 - **Curated selection:** specific or uncommon plants with a higher cost and value.
 - **Rescue lot:** stressed, partly hidden plants; cheapest and closest to the original mystery-carton charm.
 
-Each card shows quantity, known species or traits, wholesale price, and condition. Orders arrive for the preparation phase. Quantities adapt to visitor demand, stock level, free space, and missing traits. Early lots stay small. Later lots can contain up to seven plants. A no-purchase card appears when current ready stock can serve the full queue.
+Each card shows quantity, known species or traits, wholesale price, and condition. Orders arrive for the preparation phase. Quantities adapt to visitor demand, stock level, free space, and missing traits. Early lots stay small. Normal later lots can contain up to seven plants. The Rare Nursery collection can contain eight after a full sellout because it adds one specialist specimen to seven request matches. A no-purchase card appears when current ready stock can serve the full queue.
 
 Guardrails:
 
 - Wholesale price averages 45–55% of fair retail value.
 - Early daily purchasing choices cost roughly 18–32 coins.
-- Starting capacity is 12 plants. The Delivery Rack raises it to 16.
+- Starting capacity is 12 plants. The Delivery Rack raises it to 16. Display Shelves add four display slots and can raise the combined capacity to 20.
 - A consignment tray appears when cash is low, preventing bankruptcy deadlocks.
 
 ### 2. Forgiving plant condition
@@ -135,7 +136,16 @@ The current physical upgrades change what the player can do:
 - **Bench Shelf:** adds a second bench-job slot.
 - **Shop Sign:** adds one daily visitor after Week 1.
 
-Later upgrade branches can add a display plinth, humidifier, new shelves, and floor modules.
+The permanent shop-growth branch now adds:
+
+- **Display Shelves:** four usable display slots and four stock spaces;
+- **Rare Nursery Membership:** an extra deterministic mixed delivery with one Pink Princess Vine, Jewel Orchid, Spiral Aloe, or Blue Star Fern plus common stock that covers the day;
+- **Checkout Bell:** 5% more coins from every sale;
+- **Ceramic Shop Sign:** 10% more coins from Boutique sales;
+- **Scent Garden:** 2 extra coins from Lovely or Perfect matches;
+- **Wrapping Station:** 1 extra coin from every sale.
+
+Percentage bonuses add together from the original price and stay bounded. The shop-growth objects appear in the room as soon as they are bought.
 
 From Week 3, one rotating shop project also appears in the upgrade dialog. Window Garland, Community Board, Hanging Garden, Painted Pots, and Plant Reading Corner repeat on a five-week cycle. Costs start at 60 coins and 15 Bloom. They rise with the shop and stop at 180 coins and 45 Bloom. Repeated funding makes the same visible project a little richer.
 
@@ -144,7 +154,7 @@ Automation should come from readable fixtures such as the grow lamp or humidifie
 ## Economy targets
 
 - Early normal net profit: 18–28 coins per day.
-- Upgrades: 45–120 coins, or about two to five good days.
+- Utility fixtures: 45–110 coins. Permanent shop growth: 120–220 coins and 25–55 Bloom.
 - Weekly order reward: about 1–1.5 normal days of net profit.
 - Daily operating costs grow with the week, visitors, utilities, and carry-over stock.
 - Closing report: revenue − wholesale stock cost − expenses = net profit.
@@ -183,11 +193,11 @@ This created the first complete management chain using the original room and car
 - Add physical capacity, bench, care, and visitor upgrades.
 - Add repeatable weekly shop projects and closing overstock care.
 
-### Phase 4 — Growing the business
+### Phase 4 — Growing the business — started
 
 - Add optional weekly orders and a small positive or neutral event pool.
-- Add new shelf modules and movable display fixtures.
-- Add upgrade branches that change the room and shop routine.
+- Add new shelf modules and movable display fixtures. The first four-slot shelf module is complete.
+- Add upgrade branches that change the room and shop routine. The first six-item permanent branch is complete.
 - Add seasonal demand, larger contracts, and a modest shop expansion.
 
 ## Recommended next implementation slice
@@ -206,9 +216,9 @@ That extends the current chain into:
 
 Decorative pots, fertilizer types, workshops, movable fixtures, and the 35-day finale should follow after this community slice is tuned.
 
-## Save-data direction after version 6
+## Save-data direction after version 7
 
-Version 6 activates root comfort, life stage, parentage, bench jobs, operating costs, larger capacity, and the five new upgrades. Existing inventory and version-5 customer history remain intact.
+Version 7 adds permanent shop-expansion state, gated display slots, combined 20-plant capacity, rare supplier access, four specialist plant records, and bounded sale bonuses. Existing inventory, bench jobs, customer history, prices, and version-6 fixtures remain intact.
 
 Later save versions can extend that foundation with:
 

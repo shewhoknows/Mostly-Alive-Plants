@@ -98,6 +98,21 @@
           </div>
         </dl>
         <p id="week-objective" class="week-objective"><span>Week goal</span><strong>0/3 lovely matches</strong></p>
+        <button
+          id="bench-overview"
+          class="bench-overview"
+          type="button"
+          aria-controls="bench-modal"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+        >
+          <span class="bench-overview-heading">
+            <span class="bench-overview-kicker">Care bench</span>
+            <span class="bench-overview-open">Open <span aria-hidden="true">↗</span></span>
+          </span>
+          <strong>Repot · Rehabilitate · Propagate</strong>
+          <span id="bench-overview-status">Start jobs during preparation, after all cartons are open.</span>
+        </button>
         <button id="open-shop-button" class="button button-primary task-button" type="button" hidden>
           <span>Open the shop</span>
           <span aria-hidden="true">↗</span>
@@ -223,7 +238,7 @@
       </div>
     </section>
 
-    <section id="help-modal" class="modal-layer" hidden aria-labelledby="help-title">
+    <section id="help-modal" class="modal-layer" hidden>
       <div class="modal-card compact-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
         <button id="close-help" class="modal-close" type="button" aria-label="Close help">×</button>
         <p class="panel-kicker">Greenhouse handbook</p>
@@ -232,14 +247,14 @@
           <div><strong>1</strong><p>Visitor demand changes each day. Check the market strip before you buy stock.</p></div>
           <div><strong>2</strong><p>Unsold plants stay in the shop. Keep a useful range, but plan for daily costs. From Week 4, stock above the target uses 2 extra coins per plant at closing.</p></div>
           <div><strong>3</strong><p>Read Must have, Would love, and Budget. Care, arrange, or retag a plant to improve the match.</p></div>
-          <div><strong>4</strong><p>Use the Care bench to repot, restore, or propagate plants. Each job uses time and materials.</p></div>
+          <div><strong>4</strong><p>Care bench jobs only start during preparation, after all cartons are open. Repot and Rehabilitate finish next morning. Propagate takes two mornings. Its new plant then grows for three mornings.</p></div>
         </div>
         <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
       </div>
     </section>
 
-    <section id="bench-modal" class="modal-layer bench-layer" hidden aria-labelledby="bench-title">
+    <section id="bench-modal" class="modal-layer bench-layer" hidden>
       <div
         class="modal-card bench-card"
         role="dialog"
@@ -252,7 +267,7 @@
         <p class="panel-kicker">Potting room</p>
         <h2 id="bench-title">Care bench</h2>
         <p id="bench-summary" class="bench-summary">
-          Give one plant focused care. A good bench job can improve its health, value, or future stock.
+          Start jobs during preparation, after all cartons are open. Repot and Rehabilitate finish next morning. Propagate takes two mornings.
         </p>
         <p id="bench-status" class="bench-status" role="status" aria-live="polite">
           Choose a plant, then choose one available job.
@@ -276,13 +291,26 @@
       </div>
     </section>
 
-    <section id="upgrade-modal" class="modal-layer" hidden aria-labelledby="upgrade-title">
-      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
+    <section id="upgrade-modal" class="modal-layer" hidden>
+      <div class="modal-card upgrade-card-shell" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
         <button id="close-upgrades" class="modal-close" type="button" aria-label="Close upgrades">×</button>
         <p class="panel-kicker">Visible improvements</p>
         <h2 id="upgrade-title">Make the shop your own</h2>
-        <p class="modal-intro">Fixtures give the shop new functions. From Week 3, fund one repeatable shop project each week.</p>
-        <div id="upgrade-options" class="upgrade-grid"></div>
+        <p class="modal-intro">Add useful fixtures first. Then grow the shop with more display space, rare plants, and sales decorations.</p>
+        <section aria-labelledby="fixtures-title">
+          <h3 id="fixtures-title" class="upgrade-section-label">Shop fixtures</h3>
+          <div id="upgrade-options" class="upgrade-grid"></div>
+        </section>
+        <section class="expansion-panel" aria-labelledby="expansion-title">
+          <div class="expansion-heading">
+            <div>
+              <p class="panel-kicker">Permanent shop growth</p>
+              <h3 id="expansion-title">Shelves, rare plants, and profit boosts</h3>
+            </div>
+            <span id="expansion-progress">0/6 added</span>
+          </div>
+          <div id="expansion-options" class="upgrade-grid expansion-grid"></div>
+        </section>
         <section id="project-panel" class="project-panel" aria-labelledby="project-title">
           <p class="panel-kicker">This week’s shop project</p>
           <h3 id="project-title">A neighborhood improvement</h3>
@@ -293,7 +321,7 @@
       </div>
     </section>
 
-    <section id="day-report" class="modal-layer report-layer" hidden aria-labelledby="report-title">
+    <section id="day-report" class="modal-layer report-layer" hidden>
       <div class="modal-card report-card" role="dialog" aria-modal="true" aria-labelledby="report-title" aria-describedby="report-lead">
         <div class="report-stamp" aria-hidden="true">✿</div>
         <p class="panel-kicker">Shutters down</p>

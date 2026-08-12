@@ -313,7 +313,7 @@ export function askingPrice(plant = {}, species = null) {
 
 export function availableSpeciesForWeek(week) {
   const safeWeek = positiveInteger(week);
-  return SPECIES.filter((species) => positiveInteger(species.unlockWeek) <= safeWeek);
+  return SPECIES.filter((species) => species.special !== true && positiveInteger(species.unlockWeek) <= safeWeek);
 }
 
 export function availableCustomersForWeek(week) {

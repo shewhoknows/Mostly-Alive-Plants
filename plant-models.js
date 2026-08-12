@@ -181,6 +181,43 @@ function makeSpatheShape() {
   return shape;
 }
 
+function makeJewelLeafShape() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.bezierCurveTo(-0.17, 0.04, -0.43, 0.2, -0.42, 0.5);
+  shape.bezierCurveTo(-0.4, 0.76, -0.15, 0.95, 0, 1.03);
+  shape.bezierCurveTo(0.15, 0.95, 0.4, 0.76, 0.42, 0.5);
+  shape.bezierCurveTo(0.43, 0.2, 0.17, 0.04, 0, 0);
+  return shape;
+}
+
+function makeAloeBladeShape() {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.14, 0);
+  shape.bezierCurveTo(-0.19, 0.24, -0.13, 0.68, 0, 1.08);
+  shape.bezierCurveTo(0.13, 0.68, 0.19, 0.24, 0.14, 0);
+  shape.lineTo(-0.14, 0);
+  return shape;
+}
+
+function makeBlueStarFrondShape() {
+  const shape = new THREE.Shape();
+  const left = [
+    [0, 0], [-0.12, 0.08], [-0.2, 0.17], [-0.13, 0.25],
+    [-0.25, 0.35], [-0.15, 0.44], [-0.28, 0.56], [-0.16, 0.65],
+    [-0.24, 0.77], [-0.12, 0.86], [0, 1.06],
+  ];
+  const right = [
+    [0.12, 0.86], [0.24, 0.77], [0.16, 0.65], [0.28, 0.56],
+    [0.15, 0.44], [0.25, 0.35], [0.13, 0.25], [0.2, 0.17],
+    [0.12, 0.08], [0, 0],
+  ];
+  shape.moveTo(...left[0]);
+  left.slice(1).forEach((point) => shape.lineTo(...point));
+  right.forEach((point) => shape.lineTo(...point));
+  return shape;
+}
+
 function addPot(root, plant) {
   const palette = [0xc87555, 0xb96f55, 0xd49a6a, 0x6f8c82, 0xa76c64];
   const potColor = palette[hash(plant?.id || plant?.species) % palette.length];
@@ -885,6 +922,229 @@ function addCactus(root, track, colors, textures) {
   pointCone(cactus, spineGeometry, spineMaterial, [0, columnHeight + 0.46, 0], new THREE.Vector3(0, 1, 0));
 }
 
+function addPinkPrincess(root, track, colors) {
+  const poleMaterial = material(0x705846, { roughness: 1, flatShading: true });
+  const vineMaterial = material(0x4a6b50, { roughness: 0.92 });
+  const leafMaterials = [
+    material(colors.base, { roughness: 0.58 }),
+    material(new THREE.Color(colors.base).offsetHSL(0.02, 0.05, -0.09), { roughness: 0.62 }),
+  ];
+  const blushMaterials = [
+    material(0xf1a6b9, { roughness: 0.7 }),
+    material(0xd86f91, { roughness: 0.68 }),
+  ];
+  const veinMaterial = material(0xb6c69d, { roughness: 0.82 });
+  const heartGeometry = new THREE.ShapeGeometry(makeHeartShape(), 12);
+  const patchGeometry = new THREE.SphereGeometry(1, 8, 5);
+
+  cylinder(root, 0.052, 0.063, 0.94, 1.09, poleMaterial, 7);
+  const spiralPoints = [];
+  for (let index = 0; index <= 28; index += 1) {
+    const t = index / 28;
+    const angle = t * TAU * 2.7;
+    spiralPoints.push([Math.cos(angle) * 0.071, 0.64 + t * 0.91, Math.sin(angle) * 0.071]);
+  }
+  tube(root, spiralPoints, 0.015, vineMaterial, 28, 5);
+
+  for (let index = 0; index < 9; index += 1) {
+    const angle = 0.35 + index * 2.06;
+    const y = 0.72 + index * 0.1;
+    const reach = 0.16 + (index % 3) * 0.035;
+    const leafSize = 0.25 + (index % 4) * 0.018;
+    const leafNode = new THREE.Group();
+    leafNode.position.set(Math.cos(angle) * 0.07, y, Math.sin(angle) * 0.07);
+    leafNode.rotation.order = "YXZ";
+    leafNode.rotation.y = -angle;
+    leafNode.rotation.z = index % 2 ? -0.96 : -0.72;
+    root.add(leafNode);
+    track(leafNode, angle);
+
+    tube(leafNode, [[0, 0, 0], [reach * 0.52, 0.025, 0], [reach, 0.015, 0]], 0.011, vineMaterial, 5, 4);
+    const holder = new THREE.Group();
+    holder.position.set(reach, 0.015, 0);
+    holder.rotation.z = index % 2 ? 0.18 : -0.12;
+    holder.scale.set(leafSize, leafSize, 1);
+    leafNode.add(holder);
+    mesh(holder, heartGeometry, leafMaterials[index % leafMaterials.length]);
+    const vein = mesh(holder, new THREE.CylinderGeometry(0.009, 0.014, 0.76, 5), veinMaterial, [0, 0.39, 0.015]);
+    vein.rotation.z = index % 2 ? 0.025 : -0.025;
+
+    const patchCount = index % 3 === 0 ? 3 : 2;
+    for (let patchIndex = 0; patchIndex < patchCount; patchIndex += 1) {
+      const side = (patchIndex + index) % 2 ? -1 : 1;
+      const patch = mesh(holder, patchGeometry, blushMaterials[(patchIndex + index) % 2], [
+        side * (0.12 + patchIndex * 0.035),
+        0.35 + patchIndex * 0.2,
+        0.024,
+      ]);
+      patch.scale.set(0.13 + patchIndex * 0.025, 0.07 + (index % 2) * 0.02, 0.012);
+      patch.rotation.z = side * (0.22 + patchIndex * 0.14);
+    }
+  }
+}
+
+function addJewelOrchid(root, track, colors) {
+  const leafMaterials = [
+    material(colors.base, { roughness: 0.5 }),
+    material(new THREE.Color(colors.base).offsetHSL(-0.02, 0.08, -0.1), { roughness: 0.54 }),
+  ];
+  const veinMaterials = [
+    material(0xe8a8b5, { roughness: 0.76 }),
+    material(0xc9aa67, { roughness: 0.76 }),
+  ];
+  const stemMaterial = material(0x6e7151, { roughness: 0.9 });
+  const flowerMaterial = material(0xfff1e3, { roughness: 0.72 });
+  const throatMaterial = material(0xdb819c, { roughness: 0.68 });
+  const leafGeometry = new THREE.ShapeGeometry(makeJewelLeafShape(), 12);
+  const centralVeinGeometry = new THREE.CylinderGeometry(0.008, 0.012, 0.78, 5);
+  const sideVeinGeometry = new THREE.CylinderGeometry(0.005, 0.007, 0.25, 4);
+
+  for (let index = 0; index < 9; index += 1) {
+    const angle = (index / 9) * TAU + 0.18;
+    const leafSize = 0.4 + (index % 3) * 0.035;
+    const leafNode = new THREE.Group();
+    leafNode.position.set(Math.cos(angle) * 0.045, 0.63 + (index % 2) * 0.012, Math.sin(angle) * 0.045);
+    leafNode.rotation.order = "YXZ";
+    leafNode.rotation.y = -angle;
+    leafNode.rotation.z = -(0.74 + (index % 3) * 0.08);
+    root.add(leafNode);
+    track(leafNode, angle);
+
+    const holder = new THREE.Group();
+    holder.scale.set(leafSize, leafSize * (0.94 + (index % 2) * 0.06), 1);
+    leafNode.add(holder);
+    mesh(holder, leafGeometry, leafMaterials[index % 2]);
+    mesh(holder, centralVeinGeometry, veinMaterials[index % 2], [0, 0.4, 0.016]);
+    for (let veinIndex = 0; veinIndex < 3; veinIndex += 1) {
+      const y = 0.27 + veinIndex * 0.18;
+      for (const side of [-1, 1]) {
+        const sideVein = mesh(holder, sideVeinGeometry, veinMaterials[(index + veinIndex) % 2], [side * (0.075 + veinIndex * 0.018), y, 0.017]);
+        sideVein.rotation.z = side * (0.87 - veinIndex * 0.1);
+      }
+    }
+  }
+
+  const flowerStalk = new THREE.Group();
+  flowerStalk.position.y = 0.625;
+  root.add(flowerStalk);
+  track(flowerStalk, 0);
+  tube(flowerStalk, [[0, 0, 0], [0.015, 0.36, 0], [-0.025, 0.7, 0]], 0.012, stemMaterial, 8, 5);
+  for (let index = 0; index < 5; index += 1) {
+    const angle = index * 2.38;
+    const y = 0.56 + (index % 3) * 0.08;
+    const center = [Math.cos(angle) * 0.055, y, Math.sin(angle) * 0.055];
+    mesh(flowerStalk, new THREE.SphereGeometry(0.035, 8, 5), throatMaterial, center);
+    for (let petal = 0; petal < 4; petal += 1) {
+      const petalAngle = petal * (TAU / 4);
+      const bloom = mesh(flowerStalk, new THREE.SphereGeometry(0.043, 8, 5), flowerMaterial, [
+        center[0] + Math.cos(petalAngle) * 0.04,
+        center[1] + Math.sin(petalAngle) * 0.04,
+        center[2] + (petal % 2 ? 0.012 : -0.012),
+      ]);
+      bloom.scale.set(1.35, 0.68, 0.45);
+      bloom.rotation.z = petalAngle;
+    }
+  }
+}
+
+function addSpiralAloe(root, track, colors) {
+  const edgeMaterial = material(0xc0ce76, { roughness: 0.62 });
+  const leafMaterials = [
+    material(colors.base, { roughness: 0.48 }),
+    material(new THREE.Color(colors.base).offsetHSL(-0.02, 0.02, -0.1), { roughness: 0.5 }),
+    material(new THREE.Color(colors.base).offsetHSL(0.03, -0.08, 0.09), { roughness: 0.46 }),
+  ];
+  const tipMaterial = material(0xb8664f, { roughness: 0.72 });
+  const bladeShape = makeAloeBladeShape();
+  const bladeGeometry = new THREE.ExtrudeGeometry(bladeShape, {
+    depth: 0.07,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    steps: 1,
+    bevelSize: 0.018,
+    bevelThickness: 0.015,
+    curveSegments: 8,
+  });
+  bladeGeometry.translate(0, 0, -0.035);
+  const tipGeometry = new THREE.ConeGeometry(0.025, 0.12, 5);
+  const rings = [
+    { count: 11, radius: 0.11, size: 0.48, lean: -1.02 },
+    { count: 8, radius: 0.065, size: 0.51, lean: -0.67 },
+    { count: 5, radius: 0.025, size: 0.49, lean: -0.3 },
+  ];
+  let spiralIndex = 0;
+
+  rings.forEach((ring, ringIndex) => {
+    for (let index = 0; index < ring.count; index += 1) {
+      const angle = spiralIndex * 2.3999632297;
+      const leafNode = new THREE.Group();
+      leafNode.position.set(Math.cos(angle) * ring.radius, 0.635 + ringIndex * 0.025, Math.sin(angle) * ring.radius);
+      leafNode.rotation.order = "YXZ";
+      leafNode.rotation.y = -angle;
+      leafNode.rotation.z = ring.lean + Math.sin(spiralIndex * 1.7) * 0.035;
+      root.add(leafNode);
+      track(leafNode, angle);
+
+      const edge = mesh(leafNode, bladeGeometry, edgeMaterial);
+      edge.scale.set(ring.size * 1.07, ring.size * 1.04, 1.08);
+      const leaf = mesh(leafNode, bladeGeometry, leafMaterials[(spiralIndex + ringIndex) % leafMaterials.length]);
+      leaf.position.z = 0.006;
+      leaf.scale.set(ring.size * 0.89, ring.size, 0.92);
+      const tip = pointCone(leafNode, tipGeometry, tipMaterial, [0, ring.size * 1.07, 0], new THREE.Vector3(0, 1, 0));
+      tip.scale.setScalar(0.72 + ringIndex * 0.08);
+      spiralIndex += 1;
+    }
+  });
+}
+
+function addBlueStarFern(root, track, colors) {
+  const stemMaterial = material(0x516e65, { roughness: 0.9 });
+  const frondMaterials = [
+    material(colors.base, { roughness: 0.7 }),
+    material(new THREE.Color(colors.base).offsetHSL(0.02, -0.09, 0.13), { roughness: 0.72 }),
+    material(new THREE.Color(colors.base).offsetHSL(-0.02, 0.03, -0.08), { roughness: 0.74 }),
+  ];
+  const veinMaterial = material(0xa8c0a8, { roughness: 0.82 });
+  const frondGeometry = new THREE.ShapeGeometry(makeBlueStarFrondShape(), 3);
+
+  for (let index = 0; index < 10; index += 1) {
+    const angle = (index / 10) * TAU + 0.16;
+    const stemHeight = 0.15 + (index % 3) * 0.035;
+    const reach = 0.12 + (index % 2) * 0.04;
+    const size = 0.58 + (index % 4) * 0.055;
+    const frondNode = new THREE.Group();
+    frondNode.position.set(Math.cos(angle) * 0.055, 0.625, Math.sin(angle) * 0.055);
+    frondNode.rotation.order = "YXZ";
+    frondNode.rotation.y = -angle;
+    frondNode.rotation.z = -(0.47 + (index % 3) * 0.1);
+    frondNode.rotation.x = index % 2 ? 0.07 : -0.07;
+    root.add(frondNode);
+    track(frondNode, angle);
+
+    tube(frondNode, [[0, 0, 0], [reach * 0.42, stemHeight * 0.6, 0], [reach, stemHeight, 0]], 0.015, stemMaterial, 6, 5);
+    const holder = new THREE.Group();
+    holder.position.set(reach, stemHeight, 0);
+    holder.rotation.z = index % 2 ? -0.1 : 0.08;
+    holder.scale.set(size, size, 1);
+    frondNode.add(holder);
+    mesh(holder, frondGeometry, frondMaterials[index % frondMaterials.length]);
+    mesh(holder, new THREE.CylinderGeometry(0.009, 0.014, 0.92, 5), veinMaterial, [0, 0.45, 0.014]);
+  }
+
+  const curledBudGeometry = new THREE.TorusGeometry(0.065, 0.018, 5, 12, Math.PI * 1.6);
+  for (let index = 0; index < 3; index += 1) {
+    const angle = index * (TAU / 3) + 0.45;
+    const bud = new THREE.Group();
+    bud.position.set(Math.cos(angle) * 0.07, 0.65, Math.sin(angle) * 0.07);
+    bud.rotation.y = -angle;
+    root.add(bud);
+    track(bud, angle);
+    tube(bud, [[0, 0, 0], [0.03, 0.24 + index * 0.035, 0]], 0.012, stemMaterial, 4, 4);
+    const curl = mesh(bud, curledBudGeometry, frondMaterials[(index + 1) % frondMaterials.length], [0.065, 0.25 + index * 0.035, 0]);
+    curl.rotation.z = Math.PI * 0.52;
+  }
+}
+
 /**
  * Builds a local-space plant model. Game/entity metadata belongs to the caller.
  * Foliage animation pivots are exposed through root.userData.leaves.
@@ -909,6 +1169,18 @@ export function createDistinctPlant3D(plant, spec, textures = {}) {
   addPot(root, plant);
 
   switch (spec?.shape) {
+    case "pink-princess":
+      addPinkPrincess(root, track, colors, maps);
+      break;
+    case "jewel-orchid":
+      addJewelOrchid(root, track, colors, maps);
+      break;
+    case "spiral-aloe":
+      addSpiralAloe(root, track, colors, maps);
+      break;
+    case "blue-star":
+      addBlueStarFern(root, track, colors, maps);
+      break;
     case "pearls":
       addPearls(root, track, colors, maps);
       break;

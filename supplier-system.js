@@ -4,6 +4,37 @@ import { dailyTradeProfile } from "./trade-system.js";
 
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
 const SPECIES_BY_NAME = new Map(SPECIES.map((species) => [species.name, species]));
+const SPECIAL_SPECIES = SPECIES.filter((species) => species.special === true);
+
+const RARE_NURSERY_TYPE = Object.freeze({
+  id: "rare-nursery-collection",
+  name: "Rare Nursery Collection",
+  quantity: Object.freeze({ min: 3, max: 8 }),
+  pricing: Object.freeze({
+    basis: "sum-wholesale-cost",
+    multiplier: 1.15,
+    flatFee: 4,
+    rounding: "nearest-coin",
+  }),
+  selection: Object.freeze({
+    mode: "specialist-collection",
+    reveal: "species-and-traits",
+    avoidDuplicates: true,
+    condition: "healthy",
+  }),
+});
+
+const RARE_NURSERY_FILL_TYPE = Object.freeze({
+  ...RARE_NURSERY_TYPE,
+  id: "rare-nursery-stock-fill",
+  name: "Rare Nursery Stock Fill",
+  pricing: Object.freeze({
+    basis: "sum-wholesale-cost",
+    multiplier: 1,
+    flatFee: 0,
+    rounding: "nearest-coin",
+  }),
+});
 
 function customerNeed(customer) {
   return customer?.need
@@ -382,6 +413,86 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
   };
 }
 
+function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
+  const type = RARE_NURSERY_TYPE;
+  const freeCapacity = Math.max(0, capacity - inventory.length);
+  const requirements = customers.map(customerRequirement);
+  const seedKey = [
+    day,
+    type.id,
+    requirements.map(({ need }) => need || "unknown").join(","),
+    requirements.map(({ budget }) => budget ?? "legacy").join(","),
+    inventorySignature(inventory),
+  ].join("|");
+  const week = calendarForDay(day).week;
+  const assignedNeeds = maximumAssignedNeeds(inventory.filter(isAvailableForCustomers), requirements);
+  const configuredQuantity = Math.min(8, Math.max(3, customers.length - assignedNeeds + 1));
+  const quantity = Math.min(configuredQuantity, freeCapacity);
+  const rareCount = Math.min(SPECIAL_SPECIES.length, quantity > 1 ? 1 : quantity);
+  const rareSpecies = deterministicFallbackSpecies(SPECIAL_SPECIES, rareCount, false, `${seedKey}|special`, type);
+  const commonPool = availableSpeciesForWeek(week);
+  const commonQuantity = Math.max(0, quantity - rareSpecies.length);
+  const inventoryWithRare = [...inventory, ...virtualPlants(rareSpecies)];
+  const commonSpecies = searchCoveringSpecies({
+    type: RARE_NURSERY_FILL_TYPE,
+    speciesPool: commonPool,
+    quantity: commonQuantity,
+    allowDuplicates: true,
+    inventory: inventoryWithRare,
+    customers,
+    seedKey: `${seedKey}|common-fill`,
+  }) || deterministicFallbackSpecies(
+    commonPool,
+    commonQuantity,
+    true,
+    `${seedKey}|common-fallback`,
+    RARE_NURSERY_FILL_TYPE,
+  );
+  const speciesList = [...rareSpecies, ...commonSpecies];
+  const nurseryCost = calculateCost(type, speciesList);
+  const affordable = coins >= nurseryCost;
+  const fitsCapacity = inventory.length + speciesList.length <= capacity;
+  const coversRequests = inventoryCoversCustomers(
+    [...inventory, ...virtualPlants(speciesList)],
+    customers,
+  );
+  const capacityAdjusted = speciesList.length !== configuredQuantity;
+
+  return {
+    id: `day-${String(day).padStart(3, "0")}-${type.id}`,
+    kind: "supplier",
+    supplierId: type.id,
+    name: type.name,
+    description: [
+      speciesList.length === 0
+        ? "No shelf space remains for a rare delivery."
+        : `${speciesList.length} named plants, including one specialist specimen and the common stock needed for today.`,
+      capacityAdjusted && speciesList.length > 0
+        ? "The nursery reduced the collection to fit the shop."
+        : "Rare stock carries a small specialist nursery fee.",
+    ].join(" "),
+    speciesNames: speciesList.map((species) => species.name),
+    speciesIds: speciesList.map((species) => species.id),
+    cost: nurseryCost,
+    reveal: revealMetadata(type, speciesList),
+    condition: type.selection.condition,
+    quantity: speciesList.length,
+    affordable,
+    fitsCapacity,
+    capacityRemainingAfter: capacity - inventory.length - speciesList.length,
+    coversRequests,
+    selectable: speciesList.length > 0 && affordable && fitsCapacity && coversRequests,
+    duplicatePreferenceRelaxed: false,
+    capacityAdjusted,
+    configuredQuantity,
+    hardshipCredit: false,
+    nurseryCost,
+    rareCollection: true,
+    rareSpeciesCount: rareSpecies.length,
+    specialAccessRequired: true,
+  };
+}
+
 function noPurchaseFallback(day, inventory, customers, capacity) {
   if (!inventoryCoversCustomers(inventory, customers)) return null;
   return {
@@ -414,10 +525,18 @@ function noPurchaseFallback(day, inventory, customers, capacity) {
 }
 
 /**
- * Generates three deterministic supplier cards. When current stock can already
- * serve the full customer queue, a fourth no-purchase choice is appended.
+ * Generates three deterministic supplier cards. Rare Nursery Membership adds
+ * one specialist card. When current stock can already serve the full customer
+ * queue, a final no-purchase choice is appended.
  */
-export function generateSupplierLots({ day = 1, customers = [], inventory = [], coins = 0, capacity = INVENTORY_CAPACITY } = {}) {
+export function generateSupplierLots({
+  day = 1,
+  customers = [],
+  inventory = [],
+  coins = 0,
+  capacity = INVENTORY_CAPACITY,
+  rareNursery = false,
+} = {}) {
   const safeDay = Math.max(1, Math.floor(Number(day) || 1));
   const safeCoins = Math.max(0, Math.floor(Number(coins) || 0));
   const safeCustomers = Array.isArray(customers) ? customers : [];
@@ -425,6 +544,7 @@ export function generateSupplierLots({ day = 1, customers = [], inventory = [], 
   const safeCapacity = Math.max(INVENTORY_CAPACITY, Math.floor(Number(capacity) || INVENTORY_CAPACITY));
   const input = { day: safeDay, customers: safeCustomers, inventory: safeInventory, coins: safeCoins, capacity: safeCapacity };
   const lots = SUPPLIER_TYPES.map((type) => supplierLot(type, input));
+  if (rareNursery === true) lots.push(rareNurseryLot(input));
   const fallback = noPurchaseFallback(safeDay, safeInventory, safeCustomers, safeCapacity);
   return fallback ? [...lots, fallback] : lots;
 }

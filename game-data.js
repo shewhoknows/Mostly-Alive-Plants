@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 export const CARES = ["water", "mist", "prune"];
 
@@ -261,6 +261,70 @@ export const SPECIES = [
     preferredHumidity: "average",
     beneficialCare: ["water", "prune"],
     unlockWeek: 5,
+  },
+  {
+    id: "pink-princess-vine",
+    name: "Pink Princess Vine",
+    traits: ["rare", "variegated", "trailing", "collectible"],
+    price: 42,
+    wholesaleCost: 25,
+    shape: "pink-princess",
+    color: 0x315d46,
+    dryRate: 0.18,
+    preferredLight: "indirect",
+    toleratedLight: ["shade"],
+    preferredHumidity: "high",
+    beneficialCare: ["water", "mist", "prune"],
+    special: true,
+    unlockWeek: 999,
+  },
+  {
+    id: "jewel-orchid",
+    name: "Jewel Orchid",
+    traits: ["rare", "patterned", "compact", "collectible"],
+    price: 44,
+    wholesaleCost: 27,
+    shape: "jewel-orchid",
+    color: 0x24483e,
+    dryRate: 0.21,
+    preferredLight: "shade",
+    toleratedLight: ["indirect"],
+    preferredHumidity: "high",
+    beneficialCare: ["water", "mist"],
+    special: true,
+    unlockWeek: 999,
+  },
+  {
+    id: "spiral-aloe",
+    name: "Spiral Aloe",
+    traits: ["rare", "sculptural", "sunny", "collectible"],
+    price: 48,
+    wholesaleCost: 29,
+    shape: "spiral-aloe",
+    color: 0x719758,
+    dryRate: 0.055,
+    preferredLight: "sun",
+    toleratedLight: ["indirect"],
+    preferredHumidity: "dry",
+    beneficialCare: ["water"],
+    special: true,
+    unlockWeek: 999,
+  },
+  {
+    id: "blue-star-fern",
+    name: "Blue Star Fern",
+    traits: ["rare", "blue-toned", "feathery", "collectible"],
+    price: 40,
+    wholesaleCost: 24,
+    shape: "blue-star",
+    color: 0x5f8f83,
+    dryRate: 0.2,
+    preferredLight: "indirect",
+    toleratedLight: ["shade"],
+    preferredHumidity: "high",
+    beneficialCare: ["water", "mist", "prune"],
+    special: true,
+    unlockWeek: 999,
   },
 ];
 
@@ -927,6 +991,10 @@ export const SLOT_DATA = [
   { x: -1.3, y: 0.06, z: -2.85, size: 0.9, zone: "floor", zoneLabel: "open floor", lightLevel: "indirect" },
   { x: -3.7, y: 0.06, z: 0.2, size: 0.9, zone: "floor", zoneLabel: "open floor", lightLevel: "shade" },
   { x: 2.35, y: 1.4, z: 1.25, size: 0.72, zone: "counter", zoneLabel: "front counter", lightLevel: "indirect" },
+  { x: 5.43, y: 0.92, z: 1.2, size: 0.42, ceilingY: 1.98, zone: "sideShelfLower", zoneLabel: "new lower shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
+  { x: 5.43, y: 0.92, z: 1.95, size: 0.42, ceilingY: 1.98, zone: "sideShelfLower", zoneLabel: "new lower shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
+  { x: 5.43, y: 2.1, z: 1.2, size: 0.42, zone: "sideShelfUpper", zoneLabel: "new upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
+  { x: 5.43, y: 2.1, z: 1.95, size: 0.42, zone: "sideShelfUpper", zoneLabel: "new upper shelf", lightLevel: "indirect", requiresExpansion: "display-shelves" },
 ];
 
 export const SUPPLIER_TYPES = [
