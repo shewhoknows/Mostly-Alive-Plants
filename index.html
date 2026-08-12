@@ -131,6 +131,7 @@
             <div><dt>Must have</dt><dd id="customer-must">lush</dd></div>
             <div><dt>Would love</dt><dd id="customer-wish">easygoing</dd></div>
             <div><dt>Budget</dt><dd id="customer-budget">24 coins</dd></div>
+            <div id="customer-addon-chip" hidden><dt>Add-on</dt><dd id="customer-addon">fertilizer</dd></div>
           </dl>
         </div>
       </aside>
@@ -194,6 +195,18 @@
         >
           ⚘
         </button>
+        <button
+          id="supply-button"
+          class="round-button"
+          type="button"
+          aria-controls="supply-modal"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+          aria-label="Open the retail supply shelf"
+          title="Retail supply shelf"
+        >
+          ▤
+        </button>
         <button id="upgrade-button" class="round-button" type="button" aria-label="Shop upgrades">＋</button>
         <button id="sound-button" class="round-button" type="button" aria-label="Toggle sound">♫</button>
         <button id="help-button" class="round-button" type="button" aria-label="How to play">?</button>
@@ -248,6 +261,7 @@
           <div><strong>2</strong><p>Unsold plants stay in the shop. Keep a useful range, but plan for daily costs. From Week 4, stock above the target uses 2 extra coins per plant at closing.</p></div>
           <div><strong>3</strong><p>Read Must have, Would love, and Budget. Care, arrange, or retag a plant to improve the match.</p></div>
           <div><strong>4</strong><p>Select the 3D Care Bench to open its jobs. Rehabilitate clears nursery stress and restores rescue value. Normal care does not. The grow lamp improves new bench jobs.</p></div>
+          <div><strong>5</strong><p>Open the Retail Supply Shelf to buy clip lights, fertilizer, and treatments. Keep fertilizer, fungicide, and potting soil ready for customer add-ons.</p></div>
         </div>
         <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
@@ -289,6 +303,46 @@
             <div id="bench-active-jobs" class="bench-active-jobs" aria-label="Active care bench jobs"></div>
             <h4 class="bench-subheading">Start a new job</h4>
             <div id="bench-actions" class="bench-actions" role="group" aria-label="Care bench jobs"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="supply-modal" class="modal-layer supply-layer" hidden>
+      <div
+        class="modal-card supply-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="supply-title"
+        aria-describedby="supply-summary supply-status"
+        tabindex="-1"
+      >
+        <button id="close-supply" class="modal-close" type="button" aria-label="Close the retail supply shelf">×</button>
+        <p class="panel-kicker">Retail supply shelf</p>
+        <h2 id="supply-title">Useful things for useful plants</h2>
+        <p id="supply-summary" class="supply-summary">
+          Buy clip lights, feed, treatments, and customer add-ons. Supplies remain in stock until you use or sell them.
+        </p>
+        <p id="supply-status" class="supply-status" role="status" aria-live="polite">
+          Choose an item from the shelf, or choose a plant to see what it can use.
+        </p>
+        <div class="supply-workspace">
+          <section class="supply-section" aria-labelledby="supply-catalog-title">
+            <div class="supply-section-heading">
+              <h3 id="supply-catalog-title">Shelf stock</h3>
+              <span>Buy and review supplies</span>
+            </div>
+            <div id="supply-catalog" class="supply-catalog" aria-label="Retail supply catalog"></div>
+          </section>
+          <section class="supply-section supply-use-panel" aria-labelledby="supply-plant-title">
+            <div class="supply-section-heading">
+              <h3 id="supply-plant-title">Selected plant</h3>
+              <span>Use compatible items</span>
+            </div>
+            <div id="supply-plant" class="supply-plant" aria-live="polite">
+              <p class="supply-empty">Choose a plant in the shop to prepare its supplies.</p>
+            </div>
+            <div id="supply-actions" class="supply-actions" role="group" aria-label="Use supplies on the selected plant"></div>
           </section>
         </div>
       </div>

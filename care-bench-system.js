@@ -590,6 +590,8 @@ export function applyCompletedBenchJobs({
       hydration: Math.max(Number(plant.hydration) || 0, REHABILITATE_HYDRATION),
       condition: "healthy",
       needsRehabilitation: false,
+      nurseryAgeDays: 0,
+      nurseryStressDay: null,
       price: safeInteger(plant.price, 1, 1) + restoredValue,
       rehabilitationValueLoss: 0,
       recoveredToday: true,

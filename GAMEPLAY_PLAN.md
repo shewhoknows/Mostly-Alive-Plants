@@ -29,6 +29,8 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - weekly shop projects from Week 3, with rising coin-and-Bloom costs and visible room improvements;
 - extra closing care costs for stock above the daily target from Week 4;
 - a Care Bench with persistent Repot, Rehabilitate, and Propagate jobs, root-bound stock, and juvenile plants;
+- three-morning nursery age, visible plant-health decline and recovery, and deterministic mites or fungus from Day 6;
+- a physical Retail Supply Shelf with reusable Clip Grow Lights, fertilizer, issue treatments, potting soil, and optional customer add-ons;
 - five utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
 - a persistent main-panel Care Bench entry that shows timing, readiness, and active jobs;
 - Bloom reputation standings and migration of older saves into version 7.
@@ -67,15 +69,17 @@ Guardrails:
 
 ### 2. Forgiving plant condition
 
-The current plant-condition layer uses preferred light, species-specific hydration loss, and relevant water, mist, or prune actions. Plants visibly droop when thirsty, useful care improves them, and overwatering is blocked rather than becoming a hidden punishment.
+The current plant-condition layer uses preferred light, species-specific hydration loss, nursery age, root comfort, and visible health issues. Plants droop and yellow under stress. Root-bound stock shows overgrown roots. Correct care and treatment restore the model on screen.
 
-The active condition model uses three needs:
+The active condition model uses five needs:
 
 - preferred light: shade, bright indirect, or sun;
 - water cadence: slow, normal, or thirsty;
-- root comfort: comfortable or root-bound.
+- nursery age: mature stock needs Rehabilitate after three completed shop mornings;
+- root comfort: comfortable or root-bound;
+- health issue: deterministic mites or fungus can appear from Day 6.
 
-The UI translates those into one readable state: **Thriving**, **Comfortable**, **Stressed**, **Root-bound**, or **Growing**. It shows the most urgent need instead of a wall of meters.
+The UI translates those into one readable urgent state, such as **Thriving**, **Nursery-stressed**, **Root-bound**, **Mite-infested**, **Fungal**, or **Growing**.
 
 Rules:
 
@@ -84,8 +88,11 @@ Rules:
 - Correct care restores condition faster than neglect lowers it.
 - Misting and pruning are valuable only for relevant species, not universal chores.
 - Overwatering remains blocked instead of becoming a hidden punishment.
+- At most one eligible plant receives a new deterministic issue on a scheduled morning. Mite Medicine treats mites. Leaf-Safe Fungicide treats fungus.
+- Gentle Fertilizer shortens juvenile growth by one morning or adds one bounded mature growth point and a same-day visible growth boost.
+- A reusable Clip Grow Light can correct too little light. It cannot make an over-bright display suitable.
 - The grow lamp improves new Care Bench jobs. It adds Repot value, extends Rehabilitate protection, and speeds juvenile growth after Propagate. Misting stays a separate, visible care action.
-- Nursery-stressed rescue stock has a visible four-coin value loss. Water, mist, and prune do not remove that travel stress. Rehabilitate clears it, restores the lost value, and protects the plant for later shop days.
+- Nursery-stressed rescue stock has a visible four-coin value loss. Water, mist, and prune do not remove that travel stress. Rehabilitate clears it, resets nursery age, restores the lost value, and protects the plant for later shop days.
 
 ### 3. Pricing and merchandising
 
@@ -113,9 +120,21 @@ The preparation bench now has a persistent work queue:
 
 The bench starts with one job slot. The Bench Shelf adds a second. A juvenile uses stock capacity and grows for three mornings before it can be sold. A bench plant cannot serve a customer brief. The game checks the remaining visitor queue before it accepts a job, so bench work cannot make the current day impossible.
 
-Root-bound plants remain alive, but they can sell only at Quick price until repotted. Repot and rehabilitation costs enter the plant’s cost basis, so later net profit stays honest.
+Root-bound plants remain alive, but they can sell only at Quick price until repotted. Repot and rehabilitation costs enter the plant’s cost basis, so later net profit stays honest. Rehabilitate also resets the three-morning nursery-age clock.
 
-### 6. Weekly orders and neighborhood events
+### 6. Retail supplies and plant health
+
+The physical Retail Supply Shelf sells five save-safe items:
+
+- **Clip Grow Light:** reusable support for one plant with too little light;
+- **Gentle Fertilizer:** juvenile growth or bounded mature growth;
+- **Leaf-Safe Fungicide:** treatment for fungus and an optional customer add-on;
+- **Mite Medicine:** treatment for mites;
+- **Potting Soil:** an optional customer add-on.
+
+Fertilizer, fungicide, and potting soil can appear as optional purchase requests. Stock earns a small margin when available. Missing stock never blocks the plant sale. Retail inventory and Clip Grow Light assignments migrate independently from older saves.
+
+### 7. Weekly orders and neighborhood events
 
 A week has five shop days:
 
@@ -127,7 +146,7 @@ The five-day shell, objective rotation, rewards, and Friday recap are implemente
 
 Events create plans rather than punishments: sunny spell, apartment move-in week, café opening, plant swap, school fundraiser, rescue shipment, neighborhood workshop, or community market.
 
-### 7. Physical upgrades
+### 8. Physical upgrades
 
 The current physical upgrades change what the player can do:
 
@@ -196,6 +215,7 @@ This created the first complete management chain using the original room and car
 
 ### Phase 4 — Growing the business — started
 
+- **Plant-health and Retail Supply Shelf milestone — complete:** three-morning nursery age, visible stress and recovery, deterministic mites and fungus, treatments, fertilizer growth, reusable Clip Grow Lights, and optional supply add-ons.
 - Add optional weekly orders and a small positive or neutral event pool.
 - Add new shelf modules and movable display fixtures. The first four-slot shelf module is complete.
 - Add upgrade branches that change the room and shop routine. The first six-item permanent branch is complete.
@@ -203,23 +223,25 @@ This created the first complete management chain using the original room and car
 
 ## Recommended next implementation slice
 
-Build the first campaign-and-community layer without adding staff:
+The next bounded step is deeper customer orders and neighborhood events:
 
-1. add a species journal that records owned, sold, propagated, and rehabilitated plants;
-2. add customer follow-ups that refer to the exact species and price band from an earlier sale;
-3. add one optional weekly order with a deposit, a clear Friday deadline, and a Held stock state;
-4. add a small positive or neutral event pool that changes demand for one trait;
+1. add customer follow-ups that refer to the exact species and price band from an earlier sale;
+2. add one optional weekly order with a deposit, a clear Friday deadline, and a Held stock state;
+3. add a small positive or neutral event pool that changes demand for one trait;
+4. connect order and event results to existing customer memory;
 5. add two supplier relationship levels that reveal more rescue stock and improve one lot type.
 
 That extends the current chain into:
 
 **forecast and buy → place and care → price and recommend → work the bench → remember → plan for the week**
 
-Decorative pots, fertilizer types, workshops, movable fixtures, and the 35-day finale should follow after this community slice is tuned.
+The species journal, decorative pots, workshops, movable fixtures, and the 35-day finale should follow after this order-and-event slice is tuned.
 
 ## Save-data direction after version 7
 
 Version 7 adds permanent shop-expansion state, gated display slots, combined 20-plant capacity, rare supplier access, four specialist plant records, and bounded sale bonuses. Existing inventory, bench jobs, customer history, prices, and version-6 fixtures remain intact.
+
+The plant-health and retail-supply modules add their own versioned migration. Missing health fields receive safe defaults. Retail stock and Clip Grow Light assignments migrate without changing older inventory, finances, or shop upgrades.
 
 Later save versions can extend that foundation with:
 

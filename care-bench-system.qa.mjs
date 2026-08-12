@@ -107,6 +107,12 @@ assert.equal(thirstyNormal.code, "rehabilitation-not-needed");
 inventory = [plant("rescue", {
   hydration: 100,
   needsRehabilitation: true,
+  nurseryAgeDays: 4,
+  nurseryStressDay: 3,
+  healthIssue: "mites",
+  healthIssueDay: 4,
+  healthIssueAgeDays: 1,
+  healthIssueSeverity: "mild",
   rehabilitationValueLoss: REHABILITATE_VALUE_RESTORE,
   price: fern.price - REHABILITATE_VALUE_RESTORE,
   slot: null,
@@ -131,6 +137,12 @@ const rehabDone = advanceAndApplyBenchJobs({
   capacity: 12,
 });
 assert.equal(rehabDone.inventory[0].needsRehabilitation, false);
+assert.equal(rehabDone.inventory[0].nurseryAgeDays, 0);
+assert.equal(rehabDone.inventory[0].nurseryStressDay, null);
+assert.equal(rehabDone.inventory[0].healthIssue, "mites");
+assert.equal(rehabDone.inventory[0].healthIssueDay, 4);
+assert.equal(rehabDone.inventory[0].healthIssueAgeDays, 1);
+assert.equal(rehabDone.inventory[0].healthIssueSeverity, "mild");
 assert.equal(rehabDone.inventory[0].hydration, 100);
 assert.equal(rehabDone.inventory[0].conditionProtectionUntilDay, 6);
 assert.equal(rehabDone.inventory[0].acquisitionCost, fern.wholesaleCost + 8);

@@ -43,6 +43,34 @@ import {
   validateBenchJob,
 } from "./care-bench-system.js";
 import {
+  PLANT_ISSUE_TYPES,
+  advancePlantHealthInventoryMorning,
+  applyPlantFertilizer,
+  applyPlantTreatment,
+  assignClipGrowLight as markClipGrowLightAssigned,
+  hasFertilizerGrowthBoost,
+  migratePlantHealth,
+  migratePlantHealthInventory,
+  removeClipGrowLight as markClipGrowLightRemoved,
+  treatmentForIssue,
+  validatePlantFertilizer,
+  validatePlantTreatment,
+} from "./plant-health-system.js";
+import {
+  SUPPLY_CATALOG,
+  assignClipGrowLight as assignSupplyClipGrowLight,
+  availableClipGrowLightCount,
+  consumeSupply,
+  createDefaultSupplyState,
+  generateCustomerAddOnRequest,
+  migrateSupplyState,
+  purchaseSupply,
+  releaseClipGrowLight as releaseSupplyClipGrowLight,
+  sellCustomerAddOn,
+  supplyItemForId,
+  validateSupplyPurchase,
+} from "./shop-supply-system.js";
+import {
   askingPrice,
   calendarForDay,
   createWeeklyObjective,
@@ -82,7 +110,7 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
   const colorShift = rng() * 0.12 - 0.06;
   const needsRehabilitation = Boolean(options.needsRehabilitation);
   const rehabilitationValueLoss = needsRehabilitation ? REHABILITATE_VALUE_RESTORE : 0;
-  return {
+  return migratePlantHealth({
     id: `plant-${Date.now().toString(36)}-${Math.floor(rng() * 1e7).toString(36)}`,
     speciesId: species.id,
     species: species.name,
@@ -113,7 +141,7 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
     rehabilitationValueLoss,
     arrivalDay: Number.isFinite(options.arrivalDay) ? Math.max(1, Math.floor(options.arrivalDay)) : 1,
     slot: null,
-  };
+  });
 }
 
 function freshState() {
@@ -152,6 +180,7 @@ function freshState() {
     dailyCare: 0,
     dailyPerfects: 0,
     dailyRecoveries: 0,
+    dailySupplySales: 0,
     displayGoal: null,
     mothSeen: false,
     dailyOperatingCost: 0,
@@ -164,6 +193,7 @@ function freshState() {
     projectState: createDefaultProjectState(),
     expansionState: migrateExpansionState(),
     benchState: createDefaultBenchState(),
+    supplyState: createDefaultSupplyState(),
     upgrades: {
       growLamp: false,
       rainBarrel: false,
@@ -219,7 +249,7 @@ function loadState() {
         && !occupiedSlots.has(plant.slot);
       if (validSlot) occupiedSlots.add(plant.slot);
       const colorShift = Number.isFinite(plant.colorShift) ? plant.colorShift : 0;
-      return {
+      return migratePlantHealth({
         priceBand: PRICE_BANDS[plant.priceBand] ? plant.priceBand : "fair",
         lifeStage: "mature",
         maturityDaysRemaining: 0,
@@ -248,7 +278,7 @@ function loadState() {
         recoveredToday: Boolean(plant.recoveredToday),
         thirstWarned: Boolean(plant.thirstWarned),
         care: { water: false, mist: false, prune: false, ...(plant.care || {}) },
-      };
+      });
     });
     const crateQueue = Array.isArray(value.crateQueue)
       ? value.crateQueue.map((entry, index) => typeof entry === "string" ? {
@@ -284,6 +314,7 @@ function loadState() {
       + (migratedExpansion.purchased["display-shelves"] ? 4 : 0);
     const upgradedCapacity = Math.max(fixtureCapacity, Math.min(20, inventory.length));
     const migratedBench = migrateBenchState(value.benchState);
+    const migratedSupply = migrateSupplyState(value.supplyState);
     const reconciledBench = reconcileBenchInventory({
       benchState: {
         ...migratedBench,
@@ -292,6 +323,10 @@ function loadState() {
       inventory,
     });
     const migratedInventory = reconciledBench.inventory;
+    const migratedPlantIds = new Set(migratedInventory.map((plant) => plant.id));
+    migratedSupply.lightAssignments = Object.fromEntries(
+      Object.entries(migratedSupply.lightAssignments).filter(([plantId]) => migratedPlantIds.has(plantId)),
+    );
     const customerMemory = value.customerMemory && typeof value.customerMemory === "object"
       ? value.customerMemory
       : {};
@@ -344,16 +379,21 @@ function loadState() {
       dailyOperatingPaidAmount: Number.isFinite(value.dailyOperatingPaidAmount) ? value.dailyOperatingPaidAmount : 0,
       dailyOperatingShortfall: Number.isFinite(value.dailyOperatingShortfall) ? value.dailyOperatingShortfall : 0,
       dailyOverstockCost: Number.isFinite(value.dailyOverstockCost) ? Math.max(0, value.dailyOverstockCost) : 0,
+      dailySupplySales: Math.max(0, Math.floor(Number(value.dailySupplySales) || 0)),
       outstandingCosts: Math.min(MAX_OUTSTANDING_COSTS, Math.max(0, Math.floor(Number(value.outstandingCosts) || 0))),
       neighborhoodGrantUsed: Boolean(value.neighborhoodGrantUsed),
       projectState: migrateProjectState(value.projectState),
       expansionState: migratedExpansion,
       benchState: reconciledBench.benchState,
+      supplyState: migratedSupply,
       upgrades: savedUpgrades,
       customers: migratedCustomers,
       crateQueue,
       crates: crateQueue.length,
-      inventory: migratedInventory,
+      inventory: migratePlantHealthInventory(migratedInventory).map((plant) => ({
+        ...plant,
+        clipGrowLightAssigned: Boolean(migratedSupply.lightAssignments[plant.id]),
+      })),
     };
   } catch {
     return freshState();
@@ -426,6 +466,9 @@ document.addEventListener("DOMContentLoaded", () => {
     customerMust: $("customer-must"),
     customerWish: $("customer-wish"),
     customerBudget: $("customer-budget"),
+    customerChips: document.querySelector(".customer-chips"),
+    customerAddonChip: $("customer-addon-chip"),
+    customerAddon: $("customer-addon"),
     priceTray: $("price-tray"),
     priceAmount: $("price-amount"),
     priceButtons: [...document.querySelectorAll("[data-price-band]")],
@@ -461,6 +504,14 @@ document.addEventListener("DOMContentLoaded", () => {
     benchActiveJobs: $("bench-active-jobs"),
     benchActions: $("bench-actions"),
     closeBench: $("close-bench"),
+    supplyButton: $("supply-button"),
+    supplyModal: $("supply-modal"),
+    supplySummary: $("supply-summary"),
+    supplyStatus: $("supply-status"),
+    supplyCatalog: $("supply-catalog"),
+    supplyPlant: $("supply-plant"),
+    supplyActions: $("supply-actions"),
+    closeSupply: $("close-supply"),
     supplierBoard: $("supplier-board"),
     supplierTitle: $("supplier-title"),
     supplierForecast: $("supplier-forecast"),
@@ -572,6 +623,7 @@ document.addEventListener("DOMContentLoaded", () => {
     lastPlantId: null,
     benchPlantId: null,
     benchMessage: "Choose a plant, then choose one available job.",
+    supplyMessage: "Buy stock for plant care and optional customer add-ons.",
     wateringCan: null,
     canAnimation: null,
   };
@@ -995,6 +1047,7 @@ document.addEventListener("DOMContentLoaded", () => {
     makeBenchShelf(woodMat, brass);
     makeShopSignUpgrade(darkWood);
     makeShopExpansions(woodMat, darkWood, brass, cream, peach);
+    makeRetailSupplyShelf(woodMat, darkWood, brass, cream);
     makeShopProjects(woodMat, darkWood, brass);
     makeSelectionRing();
     rebuildPlants();
@@ -1195,6 +1248,101 @@ document.addEventListener("DOMContentLoaded", () => {
     world.add(root);
   }
 
+  function makeRetailSupplyShelf(woodMat, darkWood, brass, cream) {
+    const root = new THREE.Group();
+    root.name = "retail-supply-shelf";
+    const stockVisuals = Object.fromEntries(SUPPLY_CATALOG.map(({ id }) => [id, []]));
+    Object.defineProperty(root.userData, "supplyStockVisuals", {
+      configurable: true,
+      enumerable: false,
+      value: stockVisuals,
+    });
+    const sage = material(0x80977b, { roughness: 0.86 });
+    const bottleGlass = material(0x547a69, { roughness: 0.45, metalness: 0.04 });
+    const amber = material(0xa76f42, { roughness: 0.7 });
+    const paper = material(0xe6d5a8, { roughness: 0.96 });
+    box(root, [1.55, 2.55, 0.1], [-0.62, 1.3, -4.87], sage);
+    [-1.34, 0.1].forEach((x) => box(root, [0.12, 2.65, 0.6], [x, 1.325, -4.58], darkWood));
+    [0.12, 0.92, 1.72, 2.52].forEach((y) => box(root, [1.55, 0.12, 0.62], [-0.62, y, -4.58], woodMat));
+    box(root, [1.65, 0.36, 0.12], [-0.62, 2.76, -4.32], darkWood);
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.35, 0.24),
+      material(0xf2e7c9, { map: textTexture("PLANT SUPPLIES", "CARE · LIGHT · SOIL") }),
+    );
+    sign.position.set(-0.62, 2.76, -4.25);
+    root.add(sign);
+
+    const trackStockVisual = (itemId, object) => {
+      stockVisuals[itemId]?.push(object);
+      return object;
+    };
+    const addBag = (itemId, x, y, color, scale = 1) => {
+      const visual = new THREE.Group();
+      visual.position.set(x, y, -4.22);
+      const bag = box(visual, [0.32 * scale, 0.42 * scale, 0.2 * scale], [0, 0, 0], material(color, { roughness: 0.95 }));
+      bag.rotation.z = (x + 0.6) * 0.08;
+      box(visual, [0.22 * scale, 0.05 * scale, 0.21 * scale], [0, 0.22 * scale, 0], paper);
+      root.add(visual);
+      return trackStockVisual(itemId, visual);
+    };
+    const addBottle = (itemId, x, y, color) => {
+      const visual = new THREE.Group();
+      visual.position.set(x, y, -4.22);
+      cylinder(visual, 0.105, 0.12, 0.32, [0, 0, 0], color, 10);
+      cylinder(visual, 0.055, 0.055, 0.1, [0, 0.21, 0], cream, 8);
+      root.add(visual);
+      return trackStockVisual(itemId, visual);
+    };
+    addBag("potting-soil", -1.04, 0.42, 0xb69264, 1.1);
+    addBag("potting-soil", -0.58, 0.42, 0xd1ad6b, 1.1);
+    addBag("potting-soil", -0.16, 0.4, 0x9aac82, 0.94);
+    addBottle("fungicide", -1.02, 1.16, bottleGlass);
+    addBottle("neem-spray", -0.64, 1.16, amber);
+    addBottle("fungicide", -0.24, 1.16, bottleGlass);
+    [-1.04, -0.58, -0.14].forEach((x, index) => {
+      addBag("fertilizer", x, 2.01, index === 0 ? 0xe0c16e : index === 1 ? 0x789486 : 0xc4866b, 0.78);
+    });
+    [0.32, 0.94, 1.56, 2.18].forEach((y) => {
+      const lamp = new THREE.Group();
+      lamp.position.set(0.3, y, -4.28);
+      lamp.scale.setScalar(0.8);
+      cylinder(lamp, 0.022, 0.026, 0.36, [0.1, 0.18, 0], brass, 7);
+      box(lamp, [0.25, 0.035, 0.04], [0, 0.35, 0], brass, [0, 0, -0.12]);
+      cylinder(lamp, 0.085, 0.05, 0.1, [-0.12, 0.29, 0], sage, 9).rotation.z = Math.PI;
+      root.add(lamp);
+      trackStockVisual("clip-grow-light", lamp);
+    });
+
+    registerStation(root, {
+      id: "supply-shelf",
+      label: "Retail Supply Shelf",
+      ringScale: 1.25,
+      selectionAnchor: new THREE.Vector3(-0.62, 0, -4.2),
+    });
+    world.add(root);
+    updateRetailSupplyShelfStock();
+  }
+
+  function updateRetailSupplyShelfStock() {
+    const shelf = world.getObjectByName("retail-supply-shelf");
+    const visuals = shelf?.userData?.supplyStockVisuals;
+    if (!visuals) return;
+    const supplyState = migrateSupplyState(state.supplyState);
+    Object.entries(visuals).forEach(([itemId, objects]) => {
+      const item = supplyItemForId(itemId);
+      if (!item || !objects.length) return;
+      const count = itemId === "clip-grow-light"
+        ? availableClipGrowLightCount(supplyState)
+        : supplyState.stock[itemId] || 0;
+      const visibleCount = count > 0
+        ? Math.max(1, Math.ceil((count / item.maxStock) * objects.length))
+        : 0;
+      objects.forEach((object, index) => {
+        object.visible = index < visibleCount;
+      });
+    });
+  }
+
   function makeShopExpansions(woodMat, darkWood, brass, cream, peach) {
     const expansionVisible = (id) => hasExpansion(id);
 
@@ -1370,12 +1518,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const actual = slotIsActive(slot) ? slot.lightLevel : null;
     if (!actual) return { level: "unplaced", label: "light undecided", color: 0xffd15d };
     if (preferred === actual) return { level: "ideal", label: `ideal ${actual} light`, color: 0x75a86e };
+    const clipCanAddLight = plant?.clipGrowLightAssigned
+      && ((preferred === "indirect" && actual === "shade")
+        || (preferred === "sun" && ["shade", "indirect"].includes(actual)));
+    if (clipCanAddLight) {
+      return { level: "ideal", label: `ideal light · clip lamp assisted`, color: 0x75a86e, assisted: true };
+    }
     if (spec.toleratedLight?.includes(actual)) return { level: "tolerable", label: `${actual} light · tolerable`, color: 0xe2bd5d };
     return { level: "poor", label: `${actual} light · poor fit`, color: 0xdf846b };
   }
 
   function conditionOf(plant) {
     const fit = lightFit(plant);
+    if (plant.healthIssue === PLANT_ISSUE_TYPES.MITES) return { label: "mite-infested", icon: "✣" };
+    if (plant.healthIssue === PLANT_ISSUE_TYPES.FUNGUS) return { label: "fungal", icon: "✣" };
     if (plant.needsRehabilitation) return { label: "nursery-stressed", icon: "○" };
     if (plant.hydration < 42) return { label: "drooping", icon: "○" };
     if (plant.lifeStage === "juvenile") return { label: "growing", icon: "◔" };
@@ -1387,6 +1543,19 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const priceTagColors = { quick: 0x7aa6a0, fair: 0xe0b945, boutique: 0x9a739d };
+  const yellowLeafColor = new THREE.Color(0xc5ad49);
+
+  function visibleLeafStress(plant) {
+    const issueStress = plant.healthIssueSeverity === "severe"
+      ? 0.68
+      : plant.healthIssueSeverity === "established"
+        ? 0.46
+        : plant.healthIssue ? 0.28 : 0;
+    const dryStress = plant.hydration < 24 ? 0.34 : plant.hydration < 36 ? 0.16 : 0;
+    const nurseryStress = plant.needsRehabilitation ? 0.13 : 0;
+    const rootStress = plant.rootComfort !== "comfortable" ? 0.16 : 0;
+    return Math.max(issueStress, dryStress, nurseryStress, rootStress);
+  }
 
   function priceBandOf(plant) {
     return PRICE_BANDS[plant?.priceBand] ? plant.priceBand : "fair";
@@ -1415,10 +1584,149 @@ document.addEventListener("DOMContentLoaded", () => {
     if (tag?.material?.color) tag.material.color.setHex(priceTagColors[priceBandOf(plant)]);
   }
 
+  function addRootOvergrowth(root) {
+    const roots = new THREE.Group();
+    roots.name = "root-overgrowth";
+    const rootMaterial = material(0xd7c9a0, { roughness: 1 });
+    for (let index = 0; index < 6; index += 1) {
+      const angle = (index / 6) * Math.PI * 2 + 0.22;
+      const radial = (radius, y) => new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+      const curve = new THREE.CatmullRomCurve3([
+        radial(0.22, 0.63),
+        radial(0.38, 0.62),
+        radial(0.47 + (index % 2) * 0.035, 0.44),
+        radial(0.41, 0.18 + (index % 3) * 0.055),
+      ]);
+      const strand = new THREE.Mesh(new THREE.TubeGeometry(curve, 9, 0.014, 5, false), rootMaterial);
+      strand.castShadow = true;
+      roots.add(strand);
+    }
+    roots.scale.setScalar(0.001);
+    roots.visible = false;
+    root.add(roots);
+    Object.defineProperty(root.userData, "rootOvergrowth", {
+      configurable: true,
+      enumerable: false,
+      value: roots,
+    });
+    root.userData.rootGrowthVisual = 0;
+  }
+
+  function addClipGrowLightVisual(root, modelTop) {
+    const lamp = new THREE.Group();
+    lamp.name = "clip-grow-light-visual";
+    const stemMaterial = material(0x556b55, { roughness: 0.58, metalness: 0.12 });
+    const glowMaterial = material(0xffdc84, {
+      emissive: 0xffc85e,
+      emissiveIntensity: 1.65,
+      roughness: 0.28,
+    });
+    const top = Math.min(2.65, Math.max(1.12, modelTop + 0.2));
+    const stemHeight = Math.max(0.44, top - 0.62);
+    cylinder(lamp, 0.025, 0.032, stemHeight, [0.39, 0.62 + stemHeight / 2, 0.05], stemMaterial, 7);
+    box(lamp, [0.34, 0.045, 0.045], [0.23, top, 0.05], stemMaterial, [0, 0, -0.14]);
+    const shade = cylinder(lamp, 0.14, 0.08, 0.15, [0.065, top - 0.08, 0.05], stemMaterial, 10);
+    shade.rotation.z = Math.PI;
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.065, 9, 6), glowMaterial);
+    bulb.position.set(0.065, top - 0.17, 0.05);
+    lamp.add(bulb);
+    const clip = box(lamp, [0.14, 0.18, 0.12], [0.36, 0.56, 0.05], stemMaterial, [0, 0, 0.2]);
+    clip.castShadow = true;
+    root.add(lamp);
+    Object.defineProperty(root.userData, "clipGrowLight", {
+      configurable: true,
+      enumerable: false,
+      value: lamp,
+    });
+  }
+
+  function foliageMarkerAnchor(node) {
+    let surface = null;
+    let surfaceScore = -1;
+    node.traverse((object) => {
+      if (!object.isMesh || !object.geometry) return;
+      if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+      const bounds = object.geometry.boundingBox;
+      if (!bounds) return;
+      const size = bounds.getSize(new THREE.Vector3());
+      const score = size.x * size.y + size.x * size.z + size.y * size.z;
+      if (score <= surfaceScore) return;
+      surface = object;
+      surfaceScore = score;
+    });
+    if (!surface?.geometry?.boundingBox) return null;
+    const bounds = surface.geometry.boundingBox;
+    const point = bounds.getCenter(new THREE.Vector3());
+    point.z = bounds.max.z + 0.025;
+    surface.localToWorld(point);
+    return node.worldToLocal(point);
+  }
+
+  function addPlantIssueVisuals(root) {
+    const leaves = (root.userData.leaves || [])
+      .map((node) => ({ node, anchor: foliageMarkerAnchor(node) }))
+      .filter(({ anchor }) => Boolean(anchor));
+    const makeMarkers = (color, count, fungus = false) => {
+      const markerMaterial = material(color, { roughness: 0.86, emissive: fungus ? 0x2a321f : 0x31170f, emissiveIntensity: 0.08 });
+      const geometry = fungus
+        ? new THREE.SphereGeometry(0.075, 7, 5)
+        : new THREE.SphereGeometry(0.035, 6, 4);
+      const markers = [];
+      const markerCount = Math.min(count, leaves.length);
+      for (let index = 0; index < markerCount; index += 1) {
+        const leafIndex = Math.floor(((index + 0.5) / markerCount) * leaves.length + (fungus ? 1 : 0)) % leaves.length;
+        const { node, anchor } = leaves[leafIndex];
+        const marker = new THREE.Group();
+        marker.position.copy(anchor);
+        marker.rotation.z = (index % 2 ? -1 : 1) * (fungus ? 0.24 : 0.12);
+        const spot = new THREE.Mesh(geometry, markerMaterial);
+        spot.castShadow = false;
+        spot.receiveShadow = false;
+        if (fungus) spot.scale.set(1.25, 0.34, 1.05);
+        marker.add(spot);
+        marker.scale.setScalar(0.001);
+        marker.visible = false;
+        node.add(marker);
+        markers.push(marker);
+      }
+      return markers;
+    };
+    Object.defineProperty(root.userData, "issueVisuals", {
+      configurable: true,
+      enumerable: false,
+      value: {
+        mites: makeMarkers(0x9b4935, 4),
+        fungus: makeMarkers(0xd7d59b, 3, true),
+      },
+    });
+    root.userData.issueVisualScale = { mites: 0, fungus: 0 };
+  }
+
+  function captureFoliageColors(root) {
+    const seen = new Set();
+    const colors = [];
+    (root.userData.leaves || []).forEach((leaf) => leaf.traverse((object) => {
+      if (!object.isMesh) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((surface) => {
+        if (!surface?.color || seen.has(surface)) return;
+        seen.add(surface);
+        colors.push({ material: surface, healthy: surface.color.clone() });
+      });
+    }));
+    Object.defineProperty(root.userData, "foliageColorStates", {
+      configurable: true,
+      enumerable: false,
+      value: colors,
+    });
+  }
+
   function createPlant(plant) {
     const spec = speciesOf(plant);
     const root = createDistinctPlant3D(plant, spec, run.textures);
     addPlantPriceTag(root, plant);
+    captureFoliageColors(root);
+    addRootOvergrowth(root);
     root.userData.entity = { kind: "plant", id: plant.id };
     root.userData.plantId = plant.id;
     root.userData.phase = Math.abs(hash(plant.id)) % 100;
@@ -1426,7 +1734,14 @@ document.addEventListener("DOMContentLoaded", () => {
     root.userData.droop = clamp((48 - plant.hydration) / 40, 0, 1);
     root.userData.lifeScale = plant.lifeStage === "juvenile" ? 0.68 : 1;
     root.updateMatrixWorld(true);
-    root.userData.modelTop = new THREE.Box3().setFromObject(root).max.y;
+    root.userData.plantModelTop = new THREE.Box3().setFromObject(root).max.y;
+    root.userData.modelTop = root.userData.plantModelTop;
+    addPlantIssueVisuals(root);
+    if (plant.clipGrowLightAssigned) {
+      addClipGrowLightVisual(root, root.userData.modelTop);
+      root.updateMatrixWorld(true);
+      root.userData.modelTop = new THREE.Box3().setFromObject(root).max.y;
+    }
     const home = slotIsActive(SLOT_DATA[plant.slot]) ? SLOT_DATA[plant.slot] : null;
     root.userData.looseScale = 0.78 * root.userData.lifeScale;
     root.scale.setScalar(home ? scaleForSlot(root, home) : root.userData.looseScale);
@@ -1462,7 +1777,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function rebuildPlants() {
-    plantObjects.forEach((object) => unregister(object));
+    plantObjects.forEach((object) => unregister(object, { dispose: true }));
     plantObjects.clear();
     let loose = 0;
     let benchJob = 0;
@@ -1490,10 +1805,28 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSlotGlow();
   }
 
-  function unregister(object) {
+  function disposeObject3D(object) {
+    const geometries = new Set();
+    const materials = new Set();
+    object.traverse((child) => {
+      if (child.geometry?.dispose) geometries.add(child.geometry);
+      const surfaces = Array.isArray(child.material) ? child.material : [child.material];
+      surfaces.forEach((surface) => {
+        if (surface?.dispose) materials.add(surface);
+      });
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    materials.forEach((surface) => surface.dispose());
+  }
+
+  function unregister(object, { dispose = false } = {}) {
     const index = interactive.indexOf(object);
     if (index >= 0) interactive.splice(index, 1);
+    for (let moverIndex = movers.length - 1; moverIndex >= 0; moverIndex -= 1) {
+      if (movers[moverIndex].object === object) movers.splice(moverIndex, 1);
+    }
     object.removeFromParent();
+    if (dispose) disposeObject3D(object);
   }
 
   function updateCrates() {
@@ -1605,6 +1938,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.benchButton?.addEventListener("click", () => openModal(ui.benchModal, true));
     ui.benchOverview?.addEventListener("click", () => openModal(ui.benchModal, true));
     ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
+    ui.supplyButton?.addEventListener("click", () => openModal(ui.supplyModal, true));
+    ui.closeSupply?.addEventListener("click", () => openModal(ui.supplyModal, false));
     ui.helpButton?.addEventListener("click", () => openModal(ui.helpModal, true));
     ui.closeHelp?.addEventListener("click", () => openModal(ui.helpModal, false));
     ui.soundButton?.addEventListener("click", toggleSound);
@@ -1876,12 +2211,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function openModal(element, open) {
     if (!element) return;
-    if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal].includes(element)) {
+    if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal].includes(element)) {
       toast("Finish the current shop moment first.");
       return;
     }
     if (element === ui.upgradeModal && open) renderUpgrades();
     if (element === ui.benchModal && open) renderBench();
+    if (element === ui.supplyModal && open) renderSupplyShelf();
     if (open) run.modalReturnFocus = document.activeElement;
     element.hidden = !open;
     element.classList.toggle("is-open", open);
@@ -1890,7 +2226,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (ui.benchButton) ui.benchButton.setAttribute("aria-expanded", String(open));
       if (ui.benchOverview) ui.benchOverview.setAttribute("aria-expanded", String(open));
     }
-    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.report, ui.supplierBoard]
+    if (element === ui.supplyModal && ui.supplyButton) ui.supplyButton.setAttribute("aria-expanded", String(open));
+    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.report, ui.supplierBoard]
       .some((modal) => modal && !modal.hidden);
     if (ui.game) ui.game.inert = anyModalOpen;
     if (open) {
@@ -1902,7 +2239,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function currentOpenModal() {
-    return [ui.supplierBoard, ui.report, ui.benchModal, ui.upgradeModal, ui.helpModal]
+    return [ui.supplierBoard, ui.report, ui.benchModal, ui.supplyModal, ui.upgradeModal, ui.helpModal]
       .find((modal) => modal && !modal.hidden) || null;
   }
 
@@ -2162,6 +2499,298 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
     sound("upgrade");
     renderBench();
+    updateUi();
+  }
+
+  const supplyAccentColors = {
+    "clip-grow-light": "#d9b85f",
+    fertilizer: "#7f9b68",
+    fungicide: "#6f9c91",
+    "neem-spray": "#b66f55",
+    "potting-soil": "#9a7254",
+  };
+
+  function selectedSupplyPlant() {
+    const plant = state.inventory.find((item) => item.id === run.lastPlantId);
+    return plant && !plant.benchStatus ? plant : null;
+  }
+
+  function supplyActionButton({ title, copy, itemId, enabled, onClick }) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.style.setProperty("--supply-accent", supplyAccentColors[itemId] || "#d9b85f");
+    button.setAttribute("aria-disabled", String(!enabled));
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    const detail = document.createElement("small");
+    detail.textContent = copy;
+    button.append(heading, detail);
+    button.addEventListener("click", () => {
+      if (!enabled) {
+        run.supplyMessage = copy;
+        sound("error");
+        renderSupplyShelf();
+        return;
+      }
+      onClick();
+    });
+    return button;
+  }
+
+  function renderSupplyShelf() {
+    if (!ui.supplyCatalog || !ui.supplyPlant || !ui.supplyActions) return;
+    state.supplyState = migrateSupplyState(state.supplyState);
+    const totalUnits = Object.values(state.supplyState.stock).reduce((sum, count) => sum + count, 0);
+    const lightsOwned = state.supplyState.stock["clip-grow-light"] || 0;
+    const lightsAvailable = availableClipGrowLightCount(state.supplyState);
+    if (ui.supplySummary) {
+      const reserve = reservedShopCoins();
+      const unitCopy = `${totalUnits} supply ${totalUnits === 1 ? "unit is" : "units are"} on the shelf.`;
+      const lightCopy = lightsOwned === 1
+        ? `${lightsAvailable} of 1 clip grow light is free.`
+        : `${lightsAvailable} of ${lightsOwned} clip grow lights are free.`;
+      ui.supplySummary.textContent = `${unitCopy} ${lightCopy} You have ${state.coins} coins.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""} Care items also work as optional customer add-ons.`;
+    }
+    if (ui.supplyStatus) {
+      ui.supplyStatus.textContent = run.supplyMessage;
+      ui.supplyStatus.dataset.tone = /added|treated|assigned|returned|fed|sold/i.test(run.supplyMessage) ? "success" : "";
+    }
+
+    ui.supplyCatalog.replaceChildren();
+    SUPPLY_CATALOG.forEach((item) => {
+      const validation = validateSupplyPurchase({
+        id: item.id,
+        supplyState: state.supplyState,
+        coins: state.coins,
+        reservedCoins: reservedShopCoins(),
+      });
+      const stock = state.supplyState.stock[item.id] || 0;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.style.setProperty("--supply-accent", supplyAccentColors[item.id] || "#d9b85f");
+      button.setAttribute("aria-disabled", String(!validation.ok));
+      button.title = validation.ok ? item.copy : validation.message;
+      const name = document.createElement("strong");
+      name.textContent = item.title;
+      const meta = document.createElement("small");
+      meta.textContent = `${item.category} · ${stock}/${item.maxStock} in stock`;
+      const action = document.createElement("small");
+      action.textContent = validation.ok
+        ? `${validation.firstPurchase ? "Buy" : "Restock"} ${validation.quantity} · ${validation.price} coins. ${item.copy}`
+        : `${validation.message} ${item.copy}`;
+      button.append(name, meta, action);
+      button.addEventListener("click", () => buySupplyItem(item.id));
+      ui.supplyCatalog.append(button);
+    });
+
+    ui.supplyPlant.replaceChildren();
+    ui.supplyActions.replaceChildren();
+    const plant = selectedSupplyPlant();
+    if (!plant) {
+      const empty = document.createElement("p");
+      empty.className = "supply-empty";
+      empty.textContent = "Choose a plant in the shop. Then return here to add light, fertilizer, or the correct treatment.";
+      ui.supplyPlant.append(empty);
+      return;
+    }
+
+    const heading = document.createElement("h4");
+    heading.textContent = plant.species;
+    const detail = document.createElement("p");
+    const issueCopy = plant.healthIssue
+      ? `${plant.healthIssueSeverity || "mild"} ${plant.healthIssue}`
+      : "no mites or fungus";
+    detail.textContent = `${conditionOf(plant).label} · ${lightFit(plant).label} · ${issueCopy} · ${plant.growthPoints || 0}/6 growth`;
+    ui.supplyPlant.append(heading, detail);
+
+    const clipOwned = state.supplyState.stock["clip-grow-light"] || 0;
+    const clipAssigned = Boolean(plant.clipGrowLightAssigned);
+    const spec = speciesOf(plant);
+    const currentFit = lightFit(plant);
+    const assistedFit = lightFit({ ...plant, clipGrowLightAssigned: true });
+    const clipUseful = clipAssigned
+      || (spec.preferredLight !== "shade"
+        && (currentFit.level === "unplaced" || assistedFit.assisted === true));
+    const clipEnabled = clipAssigned || (clipUseful && lightsAvailable > 0);
+    ui.supplyActions.append(supplyActionButton({
+      title: clipAssigned ? "Return clip grow light" : "Assign clip grow light",
+      itemId: "clip-grow-light",
+      enabled: clipEnabled,
+      copy: clipAssigned
+        ? "Return this reusable lamp to the shelf."
+        : !clipUseful
+          ? "A lamp cannot improve this plant here. Move it away from excess light, or use its ideal display."
+          : lightsAvailable > 0
+            ? `Use one of ${lightsAvailable} available lamps to create enough light.`
+            : clipOwned ? "Every clip grow light is already assigned." : "Buy a clip grow light first.",
+      onClick: () => toggleClipGrowLight(plant),
+    }));
+
+    const fertilizerValidation = validatePlantFertilizer({ plant, day: state.day });
+    const fertilizerStock = state.supplyState.stock.fertilizer || 0;
+    ui.supplyActions.append(supplyActionButton({
+      title: "Use gentle fertilizer",
+      itemId: "fertilizer",
+      enabled: fertilizerValidation.ok && fertilizerStock > 0,
+      copy: fertilizerStock <= 0
+        ? "Buy fertilizer first."
+        : fertilizerValidation.ok ? fertilizerValidation.message : fertilizerValidation.message,
+      onClick: () => useFertilizerOnPlant(plant),
+    }));
+
+    if (plant.healthIssue) {
+      const treatmentId = treatmentForIssue(plant.healthIssue);
+      const treatment = supplyItemForId(treatmentId);
+      const treatmentStock = state.supplyState.stock[treatmentId] || 0;
+      const treatmentValidation = validatePlantTreatment({ plant, treatmentId, day: state.day });
+      ui.supplyActions.append(supplyActionButton({
+        title: `Treat ${plant.healthIssue}`,
+        itemId: treatmentId,
+        enabled: treatmentValidation.ok && treatmentStock > 0,
+        copy: treatmentStock > 0
+          ? `Use 1 ${treatment?.title || "treatment"}. Yellow leaves and visible signs will recover.`
+          : `Buy ${treatment?.title || "the correct treatment"} first.`,
+        onClick: () => treatPlantHealthIssue(plant, treatmentId),
+      }));
+    } else {
+      ui.supplyActions.append(supplyActionButton({
+        title: "No treatment needed",
+        itemId: "fungicide",
+        enabled: false,
+        copy: "This plant has no mites or fungus.",
+        onClick: () => {},
+      }));
+    }
+  }
+
+  function buySupplyItem(id) {
+    const result = purchaseSupply({
+      id,
+      supplyState: state.supplyState,
+      coins: state.coins,
+      reservedCoins: reservedShopCoins(),
+    });
+    if (!result.ok) {
+      run.supplyMessage = result.message;
+      sound("error");
+      renderSupplyShelf();
+      return;
+    }
+    state.supplyState = result.supplyState;
+    state.coins = result.coins;
+    run.supplyMessage = `${result.item.title} added to the retail shelf. ${result.stockAfter} now in stock.`;
+    save();
+    sound("upgrade");
+    renderSupplyShelf();
+    updateUi();
+  }
+
+  function replacePlantRecord(nextPlant) {
+    const index = state.inventory.findIndex((plant) => plant.id === nextPlant.id);
+    if (index >= 0) state.inventory[index] = nextPlant;
+  }
+
+  function toggleClipGrowLight(plant) {
+    if (plant.clipGrowLightAssigned) {
+      const released = releaseSupplyClipGrowLight({ supplyState: state.supplyState, plantId: plant.id });
+      const unmarked = markClipGrowLightRemoved(plant);
+      if (!released.ok || !unmarked.ok) {
+        run.supplyMessage = released.message || unmarked.message;
+        sound("error");
+        renderSupplyShelf();
+        return;
+      }
+      state.supplyState = released.supplyState;
+      replacePlantRecord(unmarked.plant);
+      run.supplyMessage = `Clip grow light returned. ${released.availableCount} are now available.`;
+    } else {
+      const assigned = assignSupplyClipGrowLight({ supplyState: state.supplyState, plantId: plant.id });
+      if (!assigned.ok) {
+        run.supplyMessage = assigned.message;
+        sound("error");
+        renderSupplyShelf();
+        return;
+      }
+      const marked = markClipGrowLightAssigned({
+        plant,
+        assignedCount: assigned.assignedCount - 1,
+        maxAssignments: assigned.totalOwned,
+        day: state.day,
+      });
+      if (!marked.ok) {
+        run.supplyMessage = marked.message;
+        sound("error");
+        renderSupplyShelf();
+        return;
+      }
+      state.supplyState = assigned.supplyState;
+      replacePlantRecord(marked.plant);
+      run.supplyMessage = `Clip grow light assigned to ${plant.species}. It now supplies missing light on a dim display.`;
+    }
+    rebuildPlants();
+    save();
+    sound("upgrade");
+    renderSupplyShelf();
+    updateUi();
+  }
+
+  function useFertilizerOnPlant(plant) {
+    const applied = applyPlantFertilizer({ plant, day: state.day });
+    if (!applied.ok) {
+      run.supplyMessage = applied.message;
+      sound("error");
+      renderSupplyShelf();
+      return;
+    }
+    const consumed = consumeSupply({ id: "fertilizer", supplyState: state.supplyState });
+    if (!consumed.ok) {
+      run.supplyMessage = consumed.message;
+      sound("error");
+      renderSupplyShelf();
+      return;
+    }
+    state.supplyState = consumed.supplyState;
+    const fertilizerCost = supplyItemForId("fertilizer")?.unitCost || 0;
+    replacePlantRecord({
+      ...applied.plant,
+      acquisitionCost: (Number(plant.acquisitionCost) || 0) + fertilizerCost,
+    });
+    run.supplyMessage = `${plant.species} was fed. ${applied.message}`;
+    if (applied.effect === "juvenile-matured") rebuildPlants();
+    else burst(plantObjects.get(plant.id)?.position.clone().add(new THREE.Vector3(0, 0.8, 0)) || new THREE.Vector3(), 0x8fb66c, 14);
+    save();
+    sound("upgrade");
+    renderSupplyShelf();
+    updateUi();
+  }
+
+  function treatPlantHealthIssue(plant, treatmentId) {
+    const applied = applyPlantTreatment({ plant, treatmentId, day: state.day });
+    if (!applied.ok) {
+      run.supplyMessage = applied.message;
+      sound("error");
+      renderSupplyShelf();
+      return;
+    }
+    const consumed = consumeSupply({ id: treatmentId, supplyState: state.supplyState });
+    if (!consumed.ok) {
+      run.supplyMessage = consumed.message;
+      sound("error");
+      renderSupplyShelf();
+      return;
+    }
+    state.supplyState = consumed.supplyState;
+    const treatmentCost = supplyItemForId(treatmentId)?.unitCost || 0;
+    replacePlantRecord({
+      ...applied.plant,
+      acquisitionCost: (Number(plant.acquisitionCost) || 0) + treatmentCost,
+    });
+    const object = plantObjects.get(plant.id);
+    if (object) burst(object.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0x79a995, 18);
+    run.supplyMessage = `${plant.species} was treated. The visible ${plant.healthIssue} signs will now fade.`;
+    save();
+    sound("mist");
+    renderSupplyShelf();
     updateUi();
   }
 
@@ -2453,6 +3082,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return state.customers?.[state.customerIndex] || null;
   }
 
+  function currentCustomerAddOn(person = currentCustomer()) {
+    if (!person || state.day < 3) return null;
+    return generateCustomerAddOnRequest({
+      day: state.day,
+      customer: person,
+      plantId: "shop-supply-request",
+      saleIndex: state.customerIndex,
+    });
+  }
+
   function customerMemoryFor(person) {
     const id = person?.id || String(person?.name || "neighbor").toLowerCase();
     return state.customerMemory[id] || (state.customerMemory[id] = {
@@ -2505,7 +3144,7 @@ document.addEventListener("DOMContentLoaded", () => {
     model.traverse((child) => {
       child.userData = {};
     });
-    const modelTop = Math.max(plantObject.userData.modelTop || 1.4, 0.8);
+    const modelTop = Math.max(plantObject.userData.plantModelTop || plantObject.userData.modelTop || 1.4, 0.8);
     model.position.set(0, 0, 0);
     model.rotation.set(0, 0.24, 0);
     model.scale.setScalar(0.78 / modelTop);
@@ -2514,7 +3153,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function spawnCustomer(enter = true) {
-    if (run.customer) unregister(run.customer);
+    if (run.customer) unregister(run.customer, { dispose: true });
     run.customer = null;
     const person = currentCustomer();
     if (!person) {
@@ -2630,6 +3269,10 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (kind === "station") {
       if (id === "watering-can") useWateringCan();
       else if (id === "care-bench" || id === "grow-lamp") openCareBenchFromRoom();
+      else if (id === "supply-shelf") {
+        canvas.focus({ preventScroll: true });
+        openModal(ui.supplyModal, true);
+      }
     }
   }
 
@@ -3101,7 +3744,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const stressCopy = plant.needsRehabilitation
       ? ` Its normal care is complete, but nursery stress remains. Rehabilitate it to restore ${plant.rehabilitationValueLoss || 0} coins of sale value.`
       : "";
-    toast(`${messages[type]}${stressCopy}${weeklyRewardCopy}`, weeklyRewardCopy || stressCopy ? 5200 : 3100);
+    const issueCopy = plant.healthIssue
+      ? ` The ${plant.healthIssue} remain. Use ${supplyItemForId(treatmentForIssue(plant.healthIssue))?.title || "the correct treatment"} from the retail shelf.`
+      : "";
+    toast(`${messages[type]}${stressCopy}${issueCopy}${weeklyRewardCopy}`, weeklyRewardCopy || stressCopy || issueCopy ? 5200 : 3100);
     updateUi();
   }
 
@@ -3141,7 +3787,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const thriving = condition.label === "thriving";
     const idealLight = lightFit(plant).level === "ideal";
     const extras = [wishMet, Boolean(careWishMet), thriving].filter(Boolean).length;
-    if (["drooping", "nursery-stressed", "root-bound", "light-stressed"].includes(condition.label) && band !== "quick") {
+    if (["drooping", "nursery-stressed", "root-bound", "light-stressed", "mite-infested", "fungal"].includes(condition.label) && band !== "quick") {
       sound("error");
       toast(`${person.name} notices that ${plant.species} is ${condition.label}. Improve its condition or use a Quick tag.`);
       return;
@@ -3171,19 +3817,32 @@ document.addEventListener("DOMContentLoaded", () => {
     const satisfaction = 1 + extras + (idealLight ? 1 : 0) + (band === "quick" ? 1 : 0);
     const delighted = satisfaction >= 4;
     const bloomReward = 2 + extras;
-    const costOfGoods = Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
+    const plantCostOfGoods = Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
     state.coins += payout;
+    const addOnRequest = currentCustomerAddOn(person);
+    const addOnSale = addOnRequest
+      ? sellCustomerAddOn({ request: addOnRequest, supplyState: state.supplyState, coins: state.coins })
+      : null;
+    if (addOnSale) {
+      state.supplyState = addOnSale.supplyState;
+      state.coins = addOnSale.coins;
+    }
+    if (addOnSale?.addOnSold) state.dailySupplySales = (Number(state.dailySupplySales) || 0) + 1;
+    const addOnRevenue = addOnSale?.addOnSold ? addOnSale.revenue : 0;
+    const addOnCostOfGoods = addOnSale?.addOnSold ? addOnSale.costOfGoods : 0;
+    const saleRevenue = payout + addOnRevenue;
+    const costOfGoods = plantCostOfGoods + addOnCostOfGoods;
     earnBloom(bloomReward);
     if (perfect) state.dailyPerfects += 1;
     const perfectDayBonus = perfect && state.dailyPerfects === 3;
     if (perfectDayBonus) earnBloom(8);
-    state.dailyRevenue += payout;
+    state.dailyRevenue += saleRevenue;
     state.dailyCostOfGoods += costOfGoods;
     state.dailySales += 1;
     addWeekStat("sales", 1);
-    addWeekStat("revenue", payout);
+    addWeekStat("revenue", saleRevenue);
     addWeekStat("costOfGoods", costOfGoods);
-    addWeekStat("profit", payout - costOfGoods);
+    addWeekStat("profit", saleRevenue - costOfGoods);
     addWeekStat("bloom", bloomReward + (perfectDayBonus ? 8 : 0));
     if (perfect) addWeekStat("perfects", 1);
     if (band === "boutique") addWeekStat("boutiqueSales", 1);
@@ -3196,7 +3855,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let weeklyRewardCopy = "";
     [
       { metric: "plantsSold", value: 1 },
-      { metric: "grossProfit", value: payout - costOfGoods },
+      { metric: "grossProfit", value: saleRevenue - costOfGoods },
       { metric: "perfectBriefs", value: perfect ? 1 : 0 },
       { metric: "boutiqueSales", value: band === "boutique" ? 1 : 0 },
       { metric: "quickSales", value: band === "quick" ? 1 : 0 },
@@ -3210,11 +3869,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const object = plantObjects.get(plant.id);
     const target = run.customer?.position.clone().add(new THREE.Vector3(0, 1.0, 0)) || new THREE.Vector3(0, 1, 3);
     if (object) {
+      const clipVisual = object.getObjectByName("clip-grow-light-visual");
+      if (clipVisual) clipVisual.visible = false;
       stageCustomerCarry(object);
       const index = interactive.indexOf(object);
       if (index >= 0) interactive.splice(index, 1);
       queueMover({ object, from: object.position.clone(), to: target, startScale: object.scale.x, endScale: 0.08, time: 0, duration: 0.62, arc: 1.2, remove: true });
       plantObjects.delete(plant.id);
+    }
+    if (plant.clipGrowLightAssigned) {
+      const released = releaseSupplyClipGrowLight({ supplyState: state.supplyState, plantId: plant.id });
+      if (released.ok) state.supplyState = released.supplyState;
     }
     state.inventory = state.inventory.filter((item) => item.id !== plant.id);
     run.selected = null;
@@ -3232,7 +3897,10 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
     sound("sale");
     const shopBonusCopy = expansionBonus ? ` Shop details add ${expansionBonus} bonus ${expansionBonus === 1 ? "coin" : "coins"}.` : "";
-    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
+    const addOnCopy = addOnSale?.addOnSold
+      ? ` They also buy ${addOnSale.item.title} for ${addOnSale.revenue} coins.`
+      : addOnRequest ? ` ${addOnRequest.title} was requested, but it was out of stock.` : "";
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${addOnCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy || addOnCopy ? 5200 : 3100);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -3400,13 +4068,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showReport() {
-    [ui.helpModal, ui.upgradeModal, ui.benchModal].forEach((modal) => {
+    [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal].forEach((modal) => {
       if (!modal) return;
       modal.hidden = true;
       modal.classList.remove("is-open");
       modal.setAttribute("aria-hidden", "true");
     });
     if (ui.benchButton) ui.benchButton.setAttribute("aria-expanded", "false");
+    if (ui.supplyButton) ui.supplyButton.setAttribute("aria-expanded", "false");
     state.phase = "report";
     run.arranging = false;
     cancelMove();
@@ -3430,7 +4099,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const bloomChange = state.bloom - state.dailyBloomStart;
       const profitCopy = `${netProfit >= 0 ? "+" : ""}${coinCopy(netProfit)}`;
       const leadCopy = state.dailySales
-        ? `${state.dailySales} plant${state.dailySales === 1 ? "" : "s"} found ${state.dailySales === 1 ? "a new home" : "new homes"}.`
+        ? `${state.dailySales} plant${state.dailySales === 1 ? "" : "s"} found ${state.dailySales === 1 ? "a new home" : "new homes"}.${state.dailySupplySales ? ` ${state.dailySupplySales} supply add-on${state.dailySupplySales === 1 ? "" : "s"} sold.` : ""}`
         : "The shop was quiet today.";
       const bloomCopy = `${bloomChange >= 0 ? "+" : ""}${bloomChange}`;
       const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"}`;
@@ -3492,9 +4161,12 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyCare = 0;
     state.dailyPerfects = 0;
     state.dailyRecoveries = 0;
+    state.dailySupplySales = 0;
     state.customers = [];
     state.crateQueue = [];
     state.displayGoal = null;
+    const healthMorning = advancePlantHealthInventoryMorning(state.inventory, { day: state.day });
+    state.inventory = healthMorning.inventory;
     const maturedPlants = [];
     const newlyRootBound = [];
     state.inventory.forEach((plant) => {
@@ -3524,7 +4196,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ...benchMorning.benchState,
       slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
     };
-    state.inventory = benchMorning.inventory;
+    state.inventory = migratePlantHealthInventory(benchMorning.inventory);
     run.benchMessage = benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length
       ? benchMorning.message
       : "Choose a plant, then choose one available job.";
@@ -3556,6 +4228,7 @@ document.addEventListener("DOMContentLoaded", () => {
       benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length ? benchMorning.message : "",
       maturedPlants.length ? `${maturedPlants.join(" and ")} ${maturedPlants.length === 1 ? "is" : "are"} mature and ready for sale.` : "",
       newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
+      healthMorning.newlyStressed.length || healthMorning.newIssues.length ? healthMorning.message : "",
       state.upgrades.growLamp && state.benchState.jobs.some((job) => job.lampAssisted)
         ? "The grow lamp is helping the active Care Bench work."
         : "",
@@ -3566,6 +4239,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateUi(saleMessage = false) {
+    updateRetailSupplyShelfStock();
     const calendar = calendarForDay(state.day);
     const trade = dailyTradeProfile({
       day: state.day,
@@ -3631,6 +4305,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (ui.customerMust) ui.customerMust.textContent = person.need;
       if (ui.customerWish) ui.customerWish.textContent = person.bonusTrait || "a thriving plant";
       if (ui.customerBudget) ui.customerBudget.textContent = `${person.budget} coins`;
+      const addOn = currentCustomerAddOn(person);
+      if (ui.customerAddonChip) ui.customerAddonChip.hidden = !addOn;
+      if (ui.customerAddon) ui.customerAddon.textContent = addOn?.title || "none";
+      if (ui.customerChips) ui.customerChips.classList.toggle("has-addon", Boolean(addOn));
       if (ui.customerAvatar) {
         ui.customerAvatar.style.backgroundImage = "";
         ui.customerAvatar.style.setProperty("--customer-color", `#${person.color.toString(16).padStart(6, "0")}`);
@@ -3652,6 +4330,17 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.benchButton.classList.toggle("is-active", jobs > 0);
       ui.benchButton.title = jobs ? `Care bench · ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Care bench";
       ui.benchButton.setAttribute("aria-label", jobs ? `Open the care bench, ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Open the care bench");
+    }
+    if (ui.supplyButton) {
+      const supply = migrateSupplyState(state.supplyState);
+      const total = Object.values(supply.stock).reduce((sum, count) => sum + count, 0);
+      const concerns = state.inventory.filter((plant) => plant.healthIssue).length;
+      ui.supplyButton.hidden = !run.started || state.phase === "report";
+      ui.supplyButton.classList.toggle("is-active", concerns > 0);
+      ui.supplyButton.title = concerns
+        ? `Retail supply shelf · ${concerns} ${concerns === 1 ? "plant needs" : "plants need"} treatment`
+        : `Retail supply shelf · ${total} ${total === 1 ? "unit" : "units"} in stock`;
+      ui.supplyButton.setAttribute("aria-label", ui.supplyButton.title);
     }
     if (ui.benchOverview) {
       const jobs = state.benchState?.jobs?.length || 0;
@@ -3715,8 +4404,13 @@ document.addEventListener("DOMContentLoaded", () => {
           : "";
         title = plant.species;
         const growth = plant.lifeStage === "juvenile" ? ` · juvenile, ${plant.maturityDaysRemaining} mornings to mature` : "";
+        const nurseryAgeCopy = plant.lifeStage === "mature" ? ` · shop age ${plant.nurseryAgeDays || 0} days` : "";
         const rehabCopy = plant.rehabilitationValueLoss ? ` · Rehabilitate restores ${plant.rehabilitationValueLoss} coins` : "";
-        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth}${rehabCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        const treatmentCopy = plant.healthIssue
+          ? ` · needs ${supplyItemForId(treatmentForIssue(plant.healthIssue))?.title || "treatment"}`
+          : "";
+        const fertilizerCopy = hasFertilizerGrowthBoost(plant, { day: state.day }) ? " · fertilizer boost active" : "";
+        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth}${nurseryAgeCopy}${rehabCopy}${treatmentCopy}${fertilizerCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -3765,6 +4459,12 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `Honey light is helping ${assisted} active Care Bench ${assisted === 1 ? "job" : "jobs"}.`
           : "New Care Bench jobs get more Repot value, longer Rehabilitate protection, or faster Propagate growth.";
         action = "Open Care Bench";
+        disabled = false;
+      } else if (selected.id === "supply-shelf") {
+        const units = Object.values(migrateSupplyState(state.supplyState).stock).reduce((sum, count) => sum + count, 0);
+        title = "Retail Supply Shelf";
+        copy = `${units} care and retail items are in stock. Buy clip grow lights, fertilizer, treatments, and potting soil.`;
+        action = "Open Supply Shelf";
         disabled = false;
       }
     }
@@ -3984,6 +4684,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (event.key === "Escape") {
       if (modal === ui.upgradeModal) openModal(ui.upgradeModal, false);
       if (modal === ui.benchModal) openModal(ui.benchModal, false);
+      if (modal === ui.supplyModal) openModal(ui.supplyModal, false);
       if (modal === ui.helpModal) openModal(ui.helpModal, false);
       return;
     }
@@ -4084,9 +4785,21 @@ document.addEventListener("DOMContentLoaded", () => {
     plantObjects.forEach((object) => {
       const plant = state.inventory.find((item) => item.id === object.userData.plantId);
       if (!plant) return;
-      const targetDroop = clamp((48 - plant.hydration) / 40, 0, 1);
+      const issueDroop = plant.healthIssueSeverity === "severe"
+        ? 0.54
+        : plant.healthIssueSeverity === "established"
+          ? 0.34
+          : plant.healthIssue ? 0.18 : 0;
+      const targetDroop = Math.max(
+        clamp((48 - plant.hydration) / 40, 0, 1),
+        issueDroop,
+        plant.needsRehabilitation ? 0.14 : 0,
+      );
       object.userData.droop = lerp(object.userData.droop || 0, targetDroop, 1 - Math.exp(-dt * 3.3));
       const droop = object.userData.droop;
+      const growth = 1
+        + Math.min(0.055, Math.max(0, Number(plant.growthPoints) || 0) * 0.009)
+        + (plant.growthBoost ? 0.025 : 0);
       (object.userData.leaves || []).forEach((leaf, index) => {
         const basePosition = leaf.userData.basePosition;
         const baseEuler = leaf.userData.baseEuler;
@@ -4101,6 +4814,45 @@ document.addEventListener("DOMContentLoaded", () => {
         leaf.rotation.z += Math.cos(angle) * droop * 0.46 + sway;
         leaf.scale.copy(baseScale);
         leaf.scale.y *= 1 - droop * 0.18;
+        leaf.scale.multiplyScalar(growth);
+      });
+
+      const yellow = visibleLeafStress(plant);
+      const colorEase = 1 - Math.exp(-dt * 1.8);
+      (object.userData.foliageColorStates || []).forEach((entry) => {
+        const targetR = lerp(entry.healthy.r, yellowLeafColor.r, yellow);
+        const targetG = lerp(entry.healthy.g, yellowLeafColor.g, yellow);
+        const targetB = lerp(entry.healthy.b, yellowLeafColor.b, yellow);
+        entry.material.color.r = lerp(entry.material.color.r, targetR, colorEase);
+        entry.material.color.g = lerp(entry.material.color.g, targetG, colorEase);
+        entry.material.color.b = lerp(entry.material.color.b, targetB, colorEase);
+      });
+
+      const roots = object.userData.rootOvergrowth;
+      if (roots) {
+        const rootsTarget = plant.rootComfort === "comfortable" ? 0 : 1;
+        object.userData.rootGrowthVisual = lerp(
+          object.userData.rootGrowthVisual || 0,
+          rootsTarget,
+          1 - Math.exp(-dt * 2.25),
+        );
+        const rootScale = object.userData.rootGrowthVisual;
+        roots.visible = rootScale > 0.012;
+        roots.scale.setScalar(Math.max(0.001, rootScale));
+      }
+
+      Object.entries(object.userData.issueVisuals || {}).forEach(([issue, markers]) => {
+        const issueTarget = plant.healthIssue === issue ? 1 : 0;
+        const current = object.userData.issueVisualScale?.[issue] || 0;
+        const next = lerp(current, issueTarget, 1 - Math.exp(-dt * 3.2));
+        object.userData.issueVisualScale[issue] = next;
+        markers.forEach((marker, index) => {
+          marker.visible = next > 0.012;
+          const pulse = !reduceMotion && issueTarget
+            ? 1 + Math.sin(time * 1.8 + index * 1.7) * 0.045
+            : 1;
+          marker.scale.setScalar(Math.max(0.001, next * pulse));
+        });
       });
     });
     if (!reduceMotion && run.selectionRing?.visible) run.selectionRing.material.opacity = 0.65 + Math.sin(time * 4) * 0.18;
@@ -4292,7 +5044,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (t >= 1) {
       if (tween.mode === "exit") {
-        unregister(run.customer);
+        unregister(run.customer, { dispose: true });
         run.customer = null;
         run.customerTween = null;
         if (tween.advance === "report") showReport();

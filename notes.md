@@ -206,3 +206,17 @@
 - Kept Quick sale as the immediate low-price option for nursery-stressed stock. Fair and Boutique sales require rehabilitation. The selected-plant text, nursery card, help, job copy, completion message, README, and gameplay plan explain the choice.
 - Save migration gives existing plants a zero value-loss default, so older stressed stock does not receive an incorrect price gain. New rescue stock saves its exact recoverable loss. Reload and repeated-completion tests confirm that value is restored once.
 - All six `*.qa.mjs` suites, JavaScript syntax checks, and whitespace checks passed. Browser checks covered the 1280×720 default and rotated street views, tree and planter clearance, the full Care Bench dialog, and clear active-work versus new-job grouping.
+
+## 2026-08-12 — Plant health and the Retail Supply Shelf
+
+- Added a three-morning nursery-age cycle for mature shop stock. Age advances once per completed morning and pauses for juveniles and active Care Bench work. A completed Rehabilitate job resets the age to zero.
+- Expanded visible plant condition. Stress now blends foliage toward yellow and adds droop. Root-bound plants show overgrown roots. Mites and fungus add distinct markers. These effects ease away after the correct recovery action.
+- Added deterministic health checks from Day 6. A scheduled morning can add mites or fungus to one eligible plant, with cooldowns that stop immediate repeat issues.
+- Added Mite Medicine for mites and Leaf-Safe Fungicide for fungus. The wrong treatment is blocked, and each correct use consumes one saved supply unit.
+- Added Gentle Fertilizer. It shortens juvenile growth by one morning or adds one bounded mature growth point and a same-day visible growth boost.
+- Added reusable Clip Grow Lights. Each owned light supports one assigned plant and can be returned for another plant. It fixes only insufficient light and cannot reduce excess light.
+- Added a separate physical Retail Supply Shelf and a desktop supply dialog for buying, restocking, assigning, and using Clip Grow Lights, fertilizer, treatments, and Potting Soil.
+- Added optional customer purchases of Gentle Fertilizer, Leaf-Safe Fungicide, or Potting Soil. Available stock earns a small margin. Missing stock never blocks the plant sale.
+- Kept the milestone save-safe with separate versioned `plant-health-system.js` and `shop-supply-system.js` modules, conservative migration, and direct QA suites for age, issues, treatments, fertilizer, reusable lights, purchases, stock limits, add-ons, and reload-safe state.
+- Made the physical shelf show the real saved stock, kept health signs attached to moving leaves, preserved correct carried-plant scale after a clip lamp is removed, and released old 3D plant resources during rebuilds. Fertilizer and treatment costs now enter the treated plant's cost basis.
+- Final validation passed every `*.qa.mjs` suite, JavaScript syntax checks, DOM and ARIA checks, and whitespace checks. Browser tests covered the live customer add-on, the stock-aware 3D shelf, the supply dialog, buying and using fertilizer, saved-state reload, and the desktop shop view.
