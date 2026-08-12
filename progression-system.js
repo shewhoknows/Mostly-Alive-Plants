@@ -343,6 +343,7 @@ export function generateCustomerBriefs({
   const speciesEntries = speciesPool.map((species) => ({ species, plant: null }));
   const stockEntries = deterministicOrder(
     (Array.isArray(inventory) ? inventory : [])
+      .filter((plant) => plant && !plant.benchStatus && plant.lifeStage !== "juvenile")
       .map((plant, stockIndex) => ({
         plant,
         stockIndex,

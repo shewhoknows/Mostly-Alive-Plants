@@ -70,7 +70,7 @@ function choiceBufferForWeek(week) {
   return 6;
 }
 
-function operatingCost(calendar, visitorCount) {
+function operatingCost(calendar, visitorCount, inventoryCount) {
   const baseCost = calendar.week === 1
     ? 0
     : Math.min(14, 3 + (calendar.week - 2));
@@ -78,11 +78,15 @@ function operatingCost(calendar, visitorCount) {
     ? WEEK_ONE_UTILITIES[calendar.weekdayIndex]
     : MATURE_UTILITIES[calendar.weekdayIndex];
   const serviceCost = Math.max(0, visitorCount - 3) * 2;
+  const stockCareCost = calendar.week === 1
+    ? 0
+    : Math.max(0, Math.ceil((inventoryCount - visitorCount) / 3));
   return {
     baseCost,
     utilities,
     serviceCost,
-    total: baseCost + utilities + serviceCost,
+    stockCareCost,
+    total: baseCost + utilities + serviceCost + stockCareCost,
   };
 }
 
@@ -174,10 +178,13 @@ export function dailyTradeProfile(options = {}) {
   const availableCustomerCount = customerCountForWeek(calendar.week);
   const requestedVisitors = requestedVisitorCount(calendar);
   const visitorBonus = nonNegativeInteger(source.visitorBonus);
-  const visitorCount = Math.min(requestedVisitors + visitorBonus, availableCustomerCount);
+  const serviceableCapacity = source.serviceableCapacity === undefined
+    ? capacity
+    : Math.min(capacity, nonNegativeInteger(source.serviceableCapacity));
+  const visitorCount = Math.min(requestedVisitors + visitorBonus, availableCustomerCount, serviceableCapacity);
   const choiceBuffer = choiceBufferForWeek(calendar.week);
   const stockTarget = Math.min(capacity, visitorCount + choiceBuffer);
-  const costs = operatingCost(calendar, visitorCount);
+  const costs = operatingCost(calendar, visitorCount, inventoryCount);
   const pressure = stockPressure({ inventoryCount, visitorCount, stockTarget, capacity });
   const shipment = shipmentGuidance({ inventoryCount, visitorCount, stockTarget, capacity });
 
@@ -186,6 +193,7 @@ export function dailyTradeProfile(options = {}) {
     ...calendar,
     visitorCount,
     visitorBonus,
+    serviceableCapacity,
     requestedVisitorCount: requestedVisitors,
     availableCustomerCount,
     operatingCost: costs.total,
@@ -200,6 +208,35 @@ export function dailyTradeProfile(options = {}) {
 }
 
 export const createDailyTradeProfile = dailyTradeProfile;
+
+export function closingOverstockCost({
+  week = 1,
+  inventoryCount = 0,
+  stockTarget = 0,
+  startWeek = 4,
+  coinsPerPlant = 2,
+} = {}) {
+  const safeWeek = positiveInteger(week);
+  if (safeWeek < positiveInteger(startWeek, 4)) return 0;
+  const surplus = Math.max(0, nonNegativeInteger(inventoryCount) - nonNegativeInteger(stockTarget));
+  return surplus * nonNegativeInteger(coinsPerPlant, 2);
+}
+
+export function optionalSpendingBudget({
+  coins = 0,
+  outstandingCosts = 0,
+  dailyOperatingCost = 0,
+  dailyOperatingCostPaid = false,
+} = {}) {
+  const safeCoins = nonNegativeInteger(coins);
+  const reserved = dailyOperatingCostPaid
+    ? 0
+    : nonNegativeInteger(outstandingCosts) + nonNegativeInteger(dailyOperatingCost);
+  return {
+    coins: Math.max(0, safeCoins - reserved),
+    reserved,
+  };
+}
 
 export function visitorCountForDay(day) {
   return dailyTradeProfile({ day }).visitorCount;

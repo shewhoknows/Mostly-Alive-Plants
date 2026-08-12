@@ -543,6 +543,7 @@ export function applyCompletedBenchJobs({
       const parent = {
         ...completedPlantBase(plant, currentDay),
         lastPropagationDay: currentDay,
+        acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
       };
       nextInventory[plantIndex] = parent;
       const child = existingChild || propagatedChild(parent, job, currentDay);
@@ -555,6 +556,7 @@ export function applyCompletedBenchJobs({
     if (job.type === BENCH_JOB_TYPES.REPOT) {
       nextInventory[plantIndex] = {
         ...completedPlantBase(plant, currentDay),
+        acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
         price: safeInteger(plant.price, 0) + REPOT_VALUE_BONUS,
         repotValueBonus: safeInteger(plant.repotValueBonus, 0) + REPOT_VALUE_BONUS,
         rootComfort: "comfortable",
@@ -569,12 +571,13 @@ export function applyCompletedBenchJobs({
 
     nextInventory[plantIndex] = {
       ...completedPlantBase(plant, currentDay),
+      acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
       hydration: Math.max(Number(plant.hydration) || 0, REHABILITATE_HYDRATION),
       condition: "healthy",
       needsRehabilitation: false,
       recoveredToday: true,
       rehabilitatedDay: currentDay,
-      conditionProtectionUntilDay: currentDay + REHABILITATE_PROTECTION_DAYS,
+      conditionProtectionUntilDay: currentDay + REHABILITATE_PROTECTION_DAYS - 1,
     };
     appliedJobs.push(job);
     messages.push(`${plant.species || "The plant"} is healthy and protected.`);

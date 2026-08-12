@@ -12,12 +12,12 @@ Target session shape:
 - Customers wait indefinitely; passing on a sale is neutral.
 - Plants can become stressed, but never die or decay while the game is closed.
 
-## Implemented foundation — Neighborhood Week v1, save version 5
+## Implemented foundation — Sustained Shop v1, save version 6
 
 The commerce-and-neighborhood slice from this plan and the attached 35-day campaign plan is now playable:
 
-- deterministic morning customer forecast and three nursery lots;
-- wholesale invoices, per-plant acquisition cost, 12-plant capacity, persistent unsold stock, and adaptive supplier top-ups when the shop lacks a required trait;
+- deterministic morning customer forecast, three nursery lots, and daily demand that grows from three visitors to four–six;
+- wholesale invoices, per-plant acquisition cost, 12-plant starting capacity, persistent unsold stock, and adaptive shipments of up to seven plants;
 - preparation phase with animated cartons, species-specific care, arrangement mode, and atomic display/bench swaps;
 - shade, indirect, and sun slots with readable ideal/tolerable/poor fit;
 - visible Quick, Fair, and Boutique tags on every plant;
@@ -25,58 +25,61 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - condition- and budget-aware acceptance, protected remaining-customer stock, and remembered visits, purchases, and satisfaction;
 - a Monday-to-Friday calendar, rotating weekly objective and reward, and a dedicated Friday recap;
 - 16 distinct plant species and paced plant, customer, and brief unlocks across the opening weeks;
-- Bloom reputation standings and migration of older saves into version 5.
+- daily operating costs, recoverable unpaid bills, a one-time emergency grant, and net-profit reporting;
+- weekly shop projects from Week 3, with rising coin-and-Bloom costs and visible room improvements;
+- extra closing care costs for stock above the daily target from Week 4;
+- a Care Bench with persistent Repot, Rehabilitate, and Propagate jobs, root-bound stock, and juvenile plants;
+- five physical upgrades: Grow Lamp, Rain Barrel, Delivery Rack, Bench Shelf, and Shop Sign;
+- Bloom reputation standings and migration of older saves into version 6.
 
-The combined direction remains: this repository plan supplies the light business spine, while the attached plan supplies the 35-day campaign, deeper plant growth, potting, journal, workshops, and finale. Matching plants to people stays the primary pleasure; commerce stays legible and light. Three customers remain the calm daily baseline, with a fourth reserved for a later fixture or event. Staff management is not part of the combined scope.
+The combined direction remains: this repository plan supplies the light business spine, while the attached plan supplies the 35-day campaign, journal, workshops, relationships, and finale. Matching plants to people stays the primary pleasure. Week 1 uses three visitors per day. Week 2 uses four or five. Later weeks rotate between four and six, and the Shop Sign can add one more. Staff management is not part of the combined scope.
 
 ## The richer daily loop
 
-1. **Plan the day.** Read the weekday, weekly objective, and customer briefs, then choose one nursery lot.
-2. **Receive stock.** Pay wholesale, unpack the delivery, inspect condition, and choose display positions.
-3. **Merchandise.** Place plants according to light needs and set each price to Quick, Fair, or Boutique.
-4. **Serve neighbors.** Read each customer’s must-have, optional preference, and budget; recommend or decline a match.
-5. **Care for stock.** Water, mist, or prune where it is genuinely beneficial and rescue drooping plants before opening.
-6. **Close the shop.** Review gross profit and Bloom, advance the weekly objective, and see the expanded week recap on Friday.
+1. **Plan the day.** Read the weekday, weekly objective, visitor count, daily cost, stock target, and customer briefs.
+2. **Receive stock.** Choose a right-sized nursery lot, pay wholesale, unpack the delivery, and inspect condition.
+3. **Work the bench.** Repot root-bound stock, rehabilitate a stressed rescue, or propagate a thriving mature plant.
+4. **Merchandise.** Place plants by light need and set each price to Quick, Fair, or Boutique.
+5. **Serve neighbors.** Read each customer’s must-have, optional preference, and budget; recommend or decline a match.
+6. **Close the shop.** Review net profit, Bloom change, remaining stock, weekly progress, and any unpaid shop cost.
 
-The next bounded slice adds a true care bench between merchandising and opening: repotting, rehabilitation, and propagation without increasing the number of daily customers.
-
-Three customers per day is the baseline. Later improvements can add a fourth visitor through an upgrade or special event.
+The daily loop now creates a real stock choice. A larger shipment gives more customer options, but it uses coins, capacity, and later plant care. Carry-over stock can become root-bound. Bench jobs also remove plants from sale for one or two mornings.
 
 ## Core management systems
 
 ### 1. Nursery ordering and persistent inventory
 
-The morning now offers three supplier cards:
+The morning offers three supplier cards:
 
-- **Reliable tray:** three disclosed common plants with a predictable margin.
-- **Curated pair:** two specific or uncommon plants with a higher cost and value.
-- **Rescue lot:** three stressed, partly hidden plants; cheapest and closest to the current mystery-crate charm.
+- **Reliable tray:** disclosed common plants with a predictable margin.
+- **Curated selection:** specific or uncommon plants with a higher cost and value.
+- **Rescue lot:** stressed, partly hidden plants; cheapest and closest to the original mystery-carton charm.
 
-Each card shows quantity, known species or traits, wholesale price, and condition. Orders arrive for the preparation phase, and the selection logic adaptively covers missing must-have traits without erasing the differences between lots. Later supplier relationships can reveal more information, reduce cost, and introduce unusual stock.
+Each card shows quantity, known species or traits, wholesale price, and condition. Orders arrive for the preparation phase. Quantities adapt to visitor demand, stock level, free space, and missing traits. Early lots stay small. Later lots can contain up to seven plants. A no-purchase card appears when current ready stock can serve the full queue.
 
 Guardrails:
 
 - Wholesale price averages 45–55% of fair retail value.
 - Early daily purchasing choices cost roughly 18–32 coins.
-- Starting capacity is 10–12 plants across displays and staging.
+- Starting capacity is 12 plants. The Delivery Rack raises it to 16.
 - A consignment tray appears when cash is low, preventing bankruptcy deadlocks.
 
 ### 2. Forgiving plant condition
 
 The current plant-condition layer uses preferred light, species-specific hydration loss, and relevant water, mist, or prune actions. Plants visibly droop when thirsty, useful care improves them, and overwatering is blocked rather than becoming a hidden punishment.
 
-The next layer adds root comfort while keeping the complete management model to three needs:
+The active condition model uses three needs:
 
 - preferred light: shade, bright indirect, or sun;
 - water cadence: slow, normal, or thirsty;
 - root comfort: comfortable or root-bound.
 
-The UI should continue translating those into one readable state: **Thriving**, **Comfortable**, **Stressed**, or **Recovering**. It surfaces the most urgent need instead of exposing a wall of meters.
+The UI translates those into one readable state: **Thriving**, **Comfortable**, **Stressed**, **Root-bound**, or **Growing**. It shows the most urgent need instead of a wall of meters.
 
 Rules:
 
 - There is no offline decay and plants never disappear.
-- Neglect is capped; a deeply stressed plant becomes Resting and loses premium value until rehabilitated.
+- Neglect is capped. A stressed rescue loses premium value until rehabilitated.
 - Correct care restores condition faster than neglect lowers it.
 - Misting and pruning are valuable only for relevant species, not universal chores.
 - Overwatering remains blocked instead of becoming a hidden punishment.
@@ -100,13 +103,15 @@ The customer card shows only three decisions: **Must have**, **Would love**, and
 
 ### 5. The care bench
 
-This is the next recommended bounded slice. Turn the existing staging bench into a small work queue:
+The preparation bench now has a persistent work queue:
 
-- **Repot:** costs a few coins, completes next morning, restores root comfort, and raises value.
-- **Propagate:** uses a thriving mature plant, takes two days, and creates a lower-value juvenile.
-- **Rehabilitate:** gives a stressed plant one protected day of accelerated recovery.
+- **Repot:** costs 10 coins, completes next morning, restores root comfort, and raises plant value.
+- **Rehabilitate:** costs 8 coins, completes next morning, restores a stressed rescue, and protects it for two shop days.
+- **Propagate:** costs 12 coins and 5 Bloom, uses a thriving mature plant, takes two mornings, and creates a lower-value juvenile.
 
-Root comfort is the new readable constraint: a root-bound plant remains alive but cannot justify its best condition or price until repotted. Soil, pots, fertilizer, and labor initially remain a single coin cost. Decorative pot stock can become a later optional layer once the core economy is proven.
+The bench starts with one job slot. The Bench Shelf adds a second. A juvenile uses stock capacity and grows for three mornings before it can be sold. A bench plant cannot serve a customer brief. The game checks the remaining visitor queue before it accepts a job, so bench work cannot make the current day impossible.
+
+Root-bound plants remain alive, but they can sell only at Quick price until repotted. Repot and rehabilitation costs enter the plant’s cost basis, so later net profit stays honest.
 
 ### 6. Weekly orders and neighborhood events
 
@@ -122,15 +127,17 @@ Events create plans rather than punishments: sunny spell, apartment move-in week
 
 ### 7. Physical upgrades
 
-Useful upgrades should change what the player can do:
+The current physical upgrades change what the player can do:
 
-- propagation shelf: second bench slot;
-- better grow lamp: converts one display to bright light;
-- shop sign: adds one daily visitor;
-- delivery rack: raises capacity;
-- display plinth: improves Boutique tolerance;
-- humidifier: handles one mist need;
-- new shelf and floor modules: add meaningful display space.
+- **Grow Lamp:** improves display light and automates useful mist care.
+- **Rain Barrel:** slows soil drying.
+- **Delivery Rack:** raises stock capacity from 12 to 16.
+- **Bench Shelf:** adds a second bench-job slot.
+- **Shop Sign:** adds one daily visitor after Week 1.
+
+Later upgrade branches can add a display plinth, humidifier, new shelves, and floor modules.
+
+From Week 3, one rotating shop project also appears in the upgrade dialog. Window Garland, Community Board, Hanging Garden, Painted Pots, and Plant Reading Corner repeat on a five-week cycle. Costs start at 60 coins and 15 Bloom. They rise with the shop and stop at 180 coins and 45 Bloom. Repeated funding makes the same visible project a little richer.
 
 Automation should come from readable fixtures such as the grow lamp or humidifier. Staff simulation is intentionally outside the combined scope.
 
@@ -139,10 +146,15 @@ Automation should come from readable fixtures such as the grow lamp or humidifie
 - Early normal net profit: 18–28 coins per day.
 - Upgrades: 45–120 coins, or about two to five good days.
 - Weekly order reward: about 1–1.5 normal days of net profit.
-- Gentle operating costs begin after day three at roughly 5–7 coins per day.
+- Daily operating costs grow with the week, visitors, utilities, and carry-over stock.
 - Closing report: revenue − wholesale stock cost − expenses = net profit.
 - Tune around 70–85% normal customer conversion, not perfect daily sales.
 - Unsold plants never incur disposal costs.
+- The first unpaid bill gets one emergency grant. Later unpaid costs carry forward, with a 45-coin safety limit.
+- Current base costs and unpaid costs are reserved before optional bench work, fixtures, or projects can use coins.
+- Repotting and propagation are repeatable coin sinks. Propagation also spends Bloom.
+- Weekly projects are the main long-run resource sink. They keep Weeks 1–2 unchanged.
+- From Week 4, each plant above the closing stock target costs 2 extra coins in stock care.
 
 ## Four shippable phases
 
@@ -163,11 +175,13 @@ This created the first complete management chain using the original room and car
 - Keep each request readable as Must have, Would love, and Budget, with condition- and price-aware acceptance.
 - Adapt supplier selections when the current shop cannot cover all required traits.
 
-### Phase 3 — Growing inventory — next
+### Phase 3 — Growing inventory and demand — complete
 
 - Add root comfort, repotting, propagation, juveniles, and rehabilitation.
-- Add supplier tiers and pot/size value modifiers.
-- Add a species journal and customer follow-ups.
+- Scale visitor demand and nursery shipment size across later weeks.
+- Add operating costs, persistent unpaid costs, capacity pressure, and repeatable bench spend.
+- Add physical capacity, bench, care, and visitor upgrades.
+- Add repeatable weekly shop projects and closing overstock care.
 
 ### Phase 4 — Growing the business
 
@@ -178,31 +192,31 @@ This created the first complete management chain using the original room and car
 
 ## Recommended next implementation slice
 
-Build the smallest useful care-bench loop without starting staff, workshops, or the larger campaign systems:
+Build the first campaign-and-community layer without adding staff:
 
-1. activate **root comfort** as a readable Comfortable / Root-bound state that affects condition and premium pricing;
-2. add **Repot** as a short paid bench job that restores root comfort on the following morning;
-3. add **Rehabilitate** as one protected day of accelerated recovery for a stressed plant;
-4. add **Propagate** for thriving mature plants, producing a lower-value juvenile after two days;
-5. persist the small bench queue, show its remaining time clearly, and migrate existing plants as Comfortable.
+1. add a species journal that records owned, sold, propagated, and rehabilitated plants;
+2. add customer follow-ups that refer to the exact species and price band from an earlier sale;
+3. add one optional weekly order with a deposit, a clear Friday deadline, and a Held stock state;
+4. add a small positive or neutral event pool that changes demand for one trait;
+5. add two supplier relationship levels that reveal more rescue stock and improve one lot type.
 
-That extends the now-playable chain into:
+That extends the current chain into:
 
-**forecast and buy → place and care → price and recommend → work the bench → remember and plan tomorrow**
+**forecast and buy → place and care → price and recommend → work the bench → remember → plan for the week**
 
-Pot inventory, fertilizer types, the journal, workshops, weekly orders, and the 35-day finale should follow only after this compact plant-growth loop is tuned.
+Decorative pots, fertilizer types, workshops, movable fixtures, and the 35-day finale should follow after this community slice is tuned.
 
-## Save-data direction after version 5
+## Save-data direction after version 6
 
-Version 5 establishes stable species and customer IDs plus the calendar, weekly objective, price bands, relationship memory, and unlock pacing. The plant records already have safe defaults for life stage, root comfort, parent, and bench status so the next slice can activate those fields without replacing inventory.
+Version 6 activates root comfort, life stage, parentage, bench jobs, operating costs, larger capacity, and the five new upgrades. Existing inventory and version-5 customer history remain intact.
 
 Later save versions can extend that foundation with:
 
 - calendar: forecast, event, and optional weekly order;
-- plant: active root comfort, growth progress, pot modifiers, and timed bench work;
-- shop: fixture unlocks, featured trait, and inventory capacity;
-- commerce: supplier relationships, delayed deliveries, active order, held stock, and operating expenses;
+- plant: decorative pot modifiers and journal records;
+- shop: more fixture unlocks and a featured trait;
+- commerce: supplier relationships, delayed deliveries, an active weekly order, and held stock;
 - community: deeper relationship beats, species journal entries, and story flags;
-- operations: upgrades, workshop schedule, and bench queue.
+- operations: workshop schedule and larger room upgrades.
 
-Existing saves continue to migrate by assigning current plants Mature and Comfortable, preserving hydration, defaulting missing tags to Fair, estimating missing acquisition cost, and preserving every slot and upgrade.
+Existing saves continue to migrate by assigning current plants Mature and Comfortable, preserving hydration, defaulting missing tags to Fair, estimating missing acquisition cost, and preserving every slot and earlier upgrade.

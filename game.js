@@ -11,6 +11,29 @@ import {
   SPECIES,
 } from "./game-data.js";
 import { generateSupplierLots, inventoryCoversCustomers } from "./supplier-system.js";
+import { closingOverstockCost, dailyTradeProfile, optionalSpendingBudget } from "./trade-system.js";
+import {
+  SHOP_PROJECTS,
+  SHOP_PROJECT_START_WEEK,
+  createDefaultProjectState,
+  fundWeeklyProject,
+  migrateProjectState,
+  projectForWeek,
+  validateProjectFunding,
+} from "./shop-project-system.js";
+import {
+  BENCH_JOB_COSTS,
+  BENCH_JOB_DURATIONS,
+  BENCH_JOB_TYPES,
+  CARE_BENCH_BASE_SLOTS,
+  advanceAndApplyBenchJobs,
+  createDefaultBenchState,
+  isConditionProtected,
+  migrateBenchState,
+  reconcileBenchInventory,
+  startBenchJob,
+  validateBenchJob,
+} from "./care-bench-system.js";
 import {
   askingPrice,
   calendarForDay,
@@ -26,6 +49,12 @@ const clamp = THREE.MathUtils.clamp;
 const lerp = THREE.MathUtils.lerp;
 const STORAGE_KEY = "mostly-alive-plants-save-v2";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ROOT_BOUND_AFTER_DAYS = 4;
+const MAX_OUTSTANDING_COSTS = 45;
+
+  function coinCopy(value) {
+    return `${value} ${Math.abs(Number(value)) === 1 ? "coin" : "coins"}`;
+  }
 
 function seeded(seed) {
   let value = seed >>> 0;
@@ -55,7 +84,9 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
     supplierLot: options.supplierLot || null,
     priceBand: "fair",
     lifeStage: "mature",
+    maturityDaysRemaining: 0,
     rootComfort: "comfortable",
+    rootAgeDays: 0,
     pot: "nursery-terracotta",
     soil: "standard",
     parentId: null,
@@ -64,6 +95,8 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
     cosmeticVariation: { hueShift: colorShift },
     recoveredToday: false,
     thirstWarned: false,
+    needsRehabilitation: Boolean(options.needsRehabilitation),
+    arrivalDay: Number.isFinite(options.arrivalDay) ? Math.max(1, Math.floor(options.arrivalDay)) : 1,
     slot: null,
   };
 }
@@ -78,6 +111,7 @@ function freshState() {
     day: 1,
     coins: 42,
     bloom: 8,
+    lifetimeBloom: 8,
     sound: true,
     inventoryCapacity: INVENTORY_CAPACITY,
     inventory: [fern, pothos],
@@ -105,7 +139,22 @@ function freshState() {
     dailyRecoveries: 0,
     displayGoal: null,
     mothSeen: false,
-    upgrades: { growLamp: false, rainBarrel: false },
+    dailyOperatingCost: 0,
+    dailyOperatingCostPaid: false,
+    dailyOperatingPaidAmount: 0,
+    dailyOperatingShortfall: 0,
+    dailyOverstockCost: 0,
+    outstandingCosts: 0,
+    neighborhoodGrantUsed: false,
+    projectState: createDefaultProjectState(),
+    benchState: createDefaultBenchState(),
+    upgrades: {
+      growLamp: false,
+      rainBarrel: false,
+      deliveryRack: false,
+      benchShelf: false,
+      shopSign: false,
+    },
   };
 }
 
@@ -139,7 +188,7 @@ function loadState() {
     }) : [];
     const migratedPhase = oldVersion >= 4 && ["supply", "preparation", "open", "report"].includes(value.phase)
       ? value.phase
-      : Number(value.customerIndex) >= 3
+      : Number(value.customerIndex) >= Math.max(3, value.customers?.length || 0)
         ? "report"
         : Number(value.crates) > 0
           ? "preparation"
@@ -155,7 +204,9 @@ function loadState() {
       return {
         priceBand: PRICE_BANDS[plant.priceBand] ? plant.priceBand : "fair",
         lifeStage: "mature",
+        maturityDaysRemaining: 0,
         rootComfort: "comfortable",
+        rootAgeDays: 0,
         pot: "nursery-terracotta",
         soil: "standard",
         parentId: null,
@@ -171,6 +222,10 @@ function loadState() {
         cosmeticVariation: { hueShift: colorShift, ...(plant.cosmeticVariation || {}) },
         slot: validSlot ? plant.slot : null,
         hydration: clamp(Number.isFinite(plant.hydration) ? plant.hydration : 78, 8, 100),
+        maturityDaysRemaining: Math.max(0, Math.floor(Number(plant.maturityDaysRemaining) || 0)),
+        rootAgeDays: Math.max(0, Math.floor(Number(plant.rootAgeDays) || 0)),
+        arrivalDay: Math.max(1, Math.floor(Number(plant.arrivalDay) || Number(value.day) || 1)),
+        needsRehabilitation: Boolean(plant.needsRehabilitation),
         recoveredToday: Boolean(plant.recoveredToday),
         thirstWarned: Boolean(plant.thirstWarned),
         care: { water: false, mist: false, prune: false, ...(plant.care || {}) },
@@ -204,20 +259,39 @@ function loadState() {
     const weeklyObjective = value.weeklyObjective?.week === calendar.week
       ? { ...createWeeklyObjective(calendar.week), ...value.weeklyObjective }
       : createWeeklyObjective(calendar.week);
+    const savedUpgrades = { ...base.upgrades, ...(value.upgrades || {}) };
     const inventoryCapacity = Number.isFinite(value.inventoryCapacity)
       ? Math.max(INVENTORY_CAPACITY, value.inventoryCapacity)
       : INVENTORY_CAPACITY;
+    const upgradedCapacity = savedUpgrades.deliveryRack ? Math.max(16, inventoryCapacity) : inventoryCapacity;
+    const migratedBench = migrateBenchState(value.benchState);
+    const reconciledBench = reconcileBenchInventory({
+      benchState: {
+        ...migratedBench,
+        slotCount: savedUpgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+      },
+      inventory,
+    });
+    const migratedInventory = reconciledBench.inventory;
     const customerMemory = value.customerMemory && typeof value.customerMemory === "object"
       ? value.customerMemory
       : {};
-    const refreshUnopenedBriefs = migratedPhase === "supply" && (oldVersion < 5 || !value.weeklyObjective);
+    const visitorBonus = value.upgrades?.shopSign ? 1 : 0;
+    const trade = dailyTradeProfile({
+      day: calendar.day,
+      inventoryCount: migratedInventory.length,
+      capacity: upgradedCapacity,
+      visitorBonus,
+      serviceableCapacity: sellablePotential(migratedInventory, upgradedCapacity),
+    });
+    const refreshUnopenedBriefs = migratedPhase === "supply" && (oldVersion < SAVE_VERSION || !value.weeklyObjective);
     const migratedCustomers = refreshUnopenedBriefs
       ? generateCustomerBriefs({
         day: calendar.day,
-        inventory,
-        capacity: inventoryCapacity,
+        inventory: migratedInventory,
+        capacity: upgradedCapacity,
         customerMemory,
-        count: 3,
+        count: trade.visitorCount,
       })
       : customers;
     return {
@@ -230,19 +304,36 @@ function loadState() {
       weekStats,
       customerMemory,
       phase: migratedPhase,
-      supplierOptions: oldVersion >= 5 && value.weeklyObjective && Array.isArray(value.supplierOptions) ? value.supplierOptions : [],
+      supplierOptions: oldVersion >= SAVE_VERSION && value.weeklyObjective && Array.isArray(value.supplierOptions) ? value.supplierOptions : [],
       selectedLotId: value.selectedLotId || null,
-      inventoryCapacity,
+      inventoryCapacity: upgradedCapacity,
       dailyStockCost: Number.isFinite(value.dailyStockCost) ? value.dailyStockCost : 0,
       dailyCostOfGoods: migratedCostOfGoods,
       dailyStartingCoins: migratedStartingCoins,
       accountingEstimate: Boolean(value.accountingEstimate || hasLegacySales),
       dailyBloomStart: Number.isFinite(value.dailyBloomStart) ? value.dailyBloomStart : Number.isFinite(value.bloom) ? value.bloom : base.bloom,
-      upgrades: { ...base.upgrades, ...(value.upgrades || {}) },
+      lifetimeBloom: Math.max(
+        Number.isFinite(value.lifetimeBloom) ? value.lifetimeBloom : 0,
+        Number.isFinite(value.bloom) ? value.bloom : base.bloom,
+      ),
+      dailyOperatingCost: Number.isFinite(value.dailyOperatingCost)
+        ? value.dailyOperatingCost
+        : oldVersion < SAVE_VERSION && migratedPhase === "report" ? 0 : trade.operatingCost,
+      dailyOperatingCostPaid: typeof value.dailyOperatingCostPaid === "boolean"
+        ? value.dailyOperatingCostPaid
+        : migratedPhase === "report",
+      dailyOperatingPaidAmount: Number.isFinite(value.dailyOperatingPaidAmount) ? value.dailyOperatingPaidAmount : 0,
+      dailyOperatingShortfall: Number.isFinite(value.dailyOperatingShortfall) ? value.dailyOperatingShortfall : 0,
+      dailyOverstockCost: Number.isFinite(value.dailyOverstockCost) ? Math.max(0, value.dailyOverstockCost) : 0,
+      outstandingCosts: Math.min(MAX_OUTSTANDING_COSTS, Math.max(0, Math.floor(Number(value.outstandingCosts) || 0))),
+      neighborhoodGrantUsed: Boolean(value.neighborhoodGrantUsed),
+      projectState: migrateProjectState(value.projectState),
+      benchState: reconciledBench.benchState,
+      upgrades: savedUpgrades,
       customers: migratedCustomers,
       crateQueue,
       crates: crateQueue.length,
-      inventory,
+      inventory: migratedInventory,
     };
   } catch {
     return freshState();
@@ -276,6 +367,13 @@ function allocateLotCosts(speciesNames, totalCost) {
   return costs;
 }
 
+function sellablePotential(inventory = [], capacity = INVENTORY_CAPACITY) {
+  const stock = Array.isArray(inventory) ? inventory : [];
+  const freeCapacity = Math.max(0, capacity - stock.length);
+  const readyStock = stock.filter((plant) => !plant.benchStatus && plant.lifeStage !== "juvenile").length;
+  return Math.min(capacity, readyStock + freeCapacity);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const canvas = $("game-canvas");
   if (!canvas) return;
@@ -293,6 +391,9 @@ document.addEventListener("DOMContentLoaded", () => {
     taskTitle: $("task-title"),
     taskCopy: $("task-copy"),
     weekObjective: $("week-objective"),
+    tradeDemand: $("trade-demand"),
+    tradeCost: $("trade-cost"),
+    tradeStock: $("trade-stock"),
     openShop: $("open-shop-button"),
     action: $("action-button"),
     careTray: $("care-tray"),
@@ -320,9 +421,21 @@ document.addEventListener("DOMContentLoaded", () => {
     nextDay: $("next-day"),
     upgradeModal: $("upgrade-modal"),
     upgradeOptions: $("upgrade-options"),
+    projectPanel: $("project-panel"),
+    projectTitle: $("project-title"),
+    projectCopy: $("project-copy"),
+    projectProgress: $("project-progress"),
+    projectFund: $("project-fund"),
     closeUpgrades: $("close-upgrades"),
     upgradeButton: $("upgrade-button"),
     arrangeButton: $("arrange-button"),
+    benchButton: $("bench-button"),
+    benchModal: $("bench-modal"),
+    benchSummary: $("bench-summary"),
+    benchStatus: $("bench-status"),
+    benchPlants: $("bench-plants"),
+    benchActions: $("bench-actions"),
+    closeBench: $("close-bench"),
     supplierBoard: $("supplier-board"),
     supplierTitle: $("supplier-title"),
     supplierForecast: $("supplier-forecast"),
@@ -338,6 +451,15 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const state = loadState();
+
+  function reservedShopCoins() {
+    return optionalSpendingBudget(state).reserved;
+  }
+
+  function discretionaryCoins() {
+    return optionalSpendingBudget(state).coins;
+  }
+
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-8, 8, 7, -7, 0.1, 80);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
@@ -357,6 +479,22 @@ document.addEventListener("DOMContentLoaded", () => {
     new THREE.Vector3(3.95, 1.12, -2.45),
     new THREE.Vector3(4.75, 1.12, -2.45),
     new THREE.Vector3(3.95, 1.12, -3.35),
+  ];
+  const rackStaging = [
+    new THREE.Vector3(4.55, 0.17, -0.66),
+    new THREE.Vector3(5.35, 0.17, -0.66),
+    new THREE.Vector3(4.55, 0.17, 0.04),
+    new THREE.Vector3(5.35, 0.17, 0.04),
+  ];
+  const floorStaging = [
+    new THREE.Vector3(1.85, 0.03, -1.35),
+    new THREE.Vector3(0.75, 0.03, -1.25),
+    new THREE.Vector3(-4.7, 0.03, 1.15),
+    new THREE.Vector3(-3.65, 0.03, 1.25),
+    new THREE.Vector3(3.42, 0.03, -0.55),
+    new THREE.Vector3(3.48, 0.03, 0.35),
+    new THREE.Vector3(5.38, 0.03, 1.48),
+    new THREE.Vector3(4.42, 0.03, 1.45),
   ];
 
   const run = {
@@ -389,6 +527,8 @@ document.addEventListener("DOMContentLoaded", () => {
     conditionSaveTimer: 0,
     conditionDirty: false,
     lastSaleGrade: "good",
+    benchPlantId: null,
+    benchMessage: "Choose a plant, then choose one available job.",
   };
 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -413,7 +553,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function makeDisplayGoal(rng) {
     const deliveries = state.crateQueue.map((entry) => speciesOfName(deliverySpeciesName(entry))).filter(Boolean);
-    const stock = state.inventory.map(speciesOf);
+    const availableStock = state.inventory.filter((plant) => !plant.benchStatus);
+    const stock = availableStock.map(speciesOf);
     const availableSpecies = [...stock, ...deliveries];
     const moments = [
       { trait: "trailing", zone: "upperShelf", copy: "Let something trailing cascade from the upper shelf." },
@@ -425,13 +566,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const possible = moments.filter((moment) => {
       if (!availableSpecies.some((species) => species.traits.includes(moment.trait))) return false;
       if (deliveries.some((species) => species.traits.includes(moment.trait))) return true;
-      return state.inventory.some((plant) => plant.traits.includes(moment.trait)
+      return availableStock.some((plant) => plant.traits.includes(moment.trait)
         && SLOT_DATA[plant.slot]?.zone !== moment.zone);
     });
     let choice = possible[Math.floor(rng() * possible.length)];
     if (!choice) {
       const fallback = [];
-      state.inventory.forEach((plant) => SLOT_DATA.forEach((slot) => {
+      availableStock.forEach((plant) => SLOT_DATA.forEach((slot) => {
         if (SLOT_DATA[plant.slot]?.zone === slot.zone) return;
         const trait = plant.traits[Math.floor(rng() * plant.traits.length)];
         fallback.push({ trait, zone: slot.zone, copy: `Feature something ${trait} on the ${slot.zoneLabel}.` });
@@ -462,7 +603,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!state.weekStats || state.weekStats.week !== calendar.week) {
       state.weekStats = freshWeekStats(calendar.week);
     }
-    if (!force && state.customers?.length === 3 && Array.isArray(state.crateQueue)) {
+    const trade = dailyTradeProfile({
+      day: state.day,
+      inventoryCount: state.inventory.length,
+      capacity: state.inventoryCapacity,
+      visitorBonus: state.upgrades.shopSign ? 1 : 0,
+      serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
+    });
+    if (!force && state.customers?.length > 0 && Array.isArray(state.crateQueue)
+      && (state.phase !== "supply" || state.customers.length === trade.visitorCount)) {
       if (state.phase === "supply" && !state.supplierOptions?.length) {
         state.supplierOptions = generateSupplierLots({
           day: state.day,
@@ -484,13 +633,18 @@ document.addEventListener("DOMContentLoaded", () => {
       inventory: state.inventory,
       capacity: state.inventoryCapacity,
       customerMemory: state.customerMemory,
-      count: 3,
+      count: trade.visitorCount,
     });
     state.crateQueue = [];
     state.phase = "supply";
     state.crates = 0;
     state.selectedLotId = null;
     state.dailyStockCost = 0;
+    state.dailyOperatingCost = trade.operatingCost;
+    state.dailyOperatingCostPaid = false;
+    state.dailyOperatingPaidAmount = 0;
+    state.dailyOperatingShortfall = 0;
+    state.dailyOverstockCost = 0;
     state.dailyStartingCoins = state.coins;
     state.dailyBloomStart = state.bloom;
     state.displayGoal = null;
@@ -663,6 +817,10 @@ document.addEventListener("DOMContentLoaded", () => {
     makeCrates();
     makeGrowLamp(brass);
     makeRainBarrel(woodMat, brass);
+    makeDeliveryRack(woodMat, darkWood);
+    makeBenchShelf(woodMat, brass);
+    makeShopSignUpgrade(darkWood);
+    makeShopProjects(woodMat, darkWood, brass);
     makeSelectionRing();
     rebuildPlants();
     updateCrates();
@@ -709,15 +867,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function makeCrates() {
     const root = new THREE.Group();
-    root.position.set(4.55, 0.03, 3.15);
+    root.position.set(3.9, 0.03, 3.15);
     const cardboard = material(0xc99863);
     const cardboardEdge = material(0x8c5f3c);
     const packingPaper = material(0xe7c985);
 
-    for (let layer = 0; layer < 3; layer += 1) {
+    for (let layer = 0; layer < 7; layer += 1) {
       const carton = new THREE.Group();
       carton.name = `carton-${layer}`;
-      carton.position.set((layer % 2) * 0.18, layer * 0.65, -layer * 0.08);
+      carton.position.set((layer % 2) * 1.18, Math.floor(layer / 2) * 0.65, -Math.floor(layer / 2) * 0.08);
 
       const body = new THREE.Group();
       box(body, [1.12, 0.08, 0.88], [0, 0.04, 0], cardboardEdge);
@@ -806,10 +964,117 @@ document.addEventListener("DOMContentLoaded", () => {
     lid.castShadow = true;
     const tap = cylinder(root, 0.07, 0.09, 0.38, [0.36, 0.38, 0], brass, 8);
     tap.rotation.z = -Math.PI / 2;
-    root.position.set(5.18, 0.03, -1.12);
+    root.position.set(5.45, 0.03, -1.95);
     root.visible = Boolean(state.upgrades.rainBarrel);
     root.name = "rain-barrel";
     world.add(root);
+  }
+
+  function makeDeliveryRack(woodMat, darkWood) {
+    const root = new THREE.Group();
+    box(root, [1.95, 0.12, 1.45], [4.95, 0.1, -0.3], woodMat);
+    [[4.1, -0.88], [5.8, -0.88], [4.1, 0.28], [5.8, 0.28]].forEach(([x, z]) => {
+      box(root, [0.11, 0.18, 0.11], [x, 0.07, z], darkWood);
+    });
+    root.visible = Boolean(state.upgrades.deliveryRack);
+    root.name = "delivery-rack";
+    world.add(root);
+  }
+
+  function makeBenchShelf(woodMat, brass) {
+    const root = new THREE.Group();
+    box(root, [2.1, 0.12, 0.52], [3.9, 2.4, -3.86], woodMat);
+    [3.05, 4.75].forEach((x) => box(root, [0.09, 1.3, 0.12], [x, 1.78, -4.05], brass));
+    root.visible = Boolean(state.upgrades.benchShelf);
+    root.name = "bench-shelf";
+    world.add(root);
+  }
+
+  function makeShopSignUpgrade(darkWood) {
+    const root = new THREE.Group();
+    const board = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.55, 0.76),
+      material(0xf0e6cc, { map: textTexture("OPEN", "MORE PLANTS TODAY") }),
+    );
+    board.position.set(5.05, 2.2, 3.9);
+    board.rotation.y = -0.26;
+    root.add(board);
+    box(root, [1.72, 0.9, 0.08], [5.05, 2.2, 3.82], darkWood, [0, -0.26, 0]);
+    root.visible = Boolean(state.upgrades.shopSign);
+    root.name = "shop-sign-upgrade";
+    world.add(root);
+  }
+
+  function makeShopProjects(woodMat, darkWood, brass) {
+    const countOf = (id) => Math.max(0, Number(state.projectState?.counts?.[id]) || 0);
+    const leafyGreen = material(0x78966d);
+
+    const garland = new THREE.Group();
+    garland.position.set(2.5, 4.75, -4.6);
+    for (let index = 0; index < 9; index += 1) {
+      const angle = Math.PI + (index / 8) * Math.PI;
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.13, 7, 5), leafyGreen);
+      leaf.scale.set(1.5, 0.65, 0.5);
+      leaf.position.set(Math.cos(angle) * 1.6, Math.sin(angle) * 0.42, 0);
+      garland.add(leaf);
+      const light = new THREE.PointLight(0xffd585, 0.22, 1.1);
+      light.position.copy(leaf.position).add(new THREE.Vector3(0, -0.12, 0.12));
+      garland.add(light);
+    }
+    garland.name = "project-window-garland";
+    garland.visible = countOf("window-garland") > 0;
+    world.add(garland);
+
+    const board = new THREE.Group();
+    board.position.set(-5.86, 3.2, -1.45);
+    box(board, [0.09, 1.08, 1.75], [0, 0, 0], material(0xd6b47d));
+    for (let index = 0; index < 5; index += 1) {
+      box(board, [0.02, 0.25, 0.35], [0.06, 0.25 - (index % 2) * 0.42, -0.37 + Math.floor(index / 2) * 0.42], material([0xd98f6d, 0xe9dfba, 0xa4b995][index % 3]), [index % 2 ? 0.08 : -0.06, 0, 0]);
+    }
+    board.name = "project-community-board";
+    board.visible = countOf("community-board") > 0;
+    world.add(board);
+
+    const hanging = new THREE.Group();
+    hanging.position.set(0, 4.32, -2.6);
+    [-1.1, 0, 1.1].forEach((x, index) => {
+      cylinder(hanging, 0.02, 0.02, 1.2, [x, 0.63, 0], brass, 5);
+      cylinder(hanging, 0.28, 0.22, 0.36, [x, 0, 0], material(0xb87558), 9);
+      for (let leafIndex = 0; leafIndex < 5; leafIndex += 1) {
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.17, 7, 5), leafyGreen);
+        leaf.scale.set(0.8, 1.6, 0.6);
+        leaf.position.set(x + (leafIndex - 2) * 0.11, -0.27 - Math.abs(leafIndex - 2) * 0.08 - index * 0.03, 0);
+        hanging.add(leaf);
+      }
+    });
+    hanging.name = "project-hanging-garden";
+    hanging.visible = countOf("hanging-garden") > 0;
+    world.add(hanging);
+
+    const pots = new THREE.Group();
+    pots.position.set(3.7, 1.3, -3.88);
+    [0xdf846e, 0x7aa6a0, 0xe0b945, 0x9a739d].forEach((color, index) => {
+      cylinder(pots, 0.18, 0.14, 0.33, [(index - 1.5) * 0.46, 0, 0], material(color), 9);
+    });
+    pots.name = "project-painted-pots";
+    pots.visible = countOf("painted-pots") > 0;
+    world.add(pots);
+
+    const corner = new THREE.Group();
+    corner.position.set(-4.6, 0, 2.95);
+    box(corner, [1.15, 0.18, 1.05], [0, 0.47, 0], woodMat);
+    box(corner, [1.15, 1.05, 0.18], [0, 0.92, 0.43], darkWood, [0.15, 0, 0]);
+    [[-0.45, -0.4], [0.45, -0.4]].forEach(([x, z]) => box(corner, [0.12, 0.48, 0.12], [x, 0.24, z], darkWood));
+    [0xe6d69e, 0x8aa5a0, 0xce8e73].forEach((color, index) => box(corner, [0.48, 0.08, 0.32], [-0.55 + index * 0.08, 0.16 + index * 0.09, 0.25], material(color), [0, 0.15, index * 0.05]));
+    corner.name = "project-reading-corner";
+    corner.visible = countOf("reading-corner") > 0;
+    world.add(corner);
+
+    SHOP_PROJECTS.forEach((project) => {
+      const count = countOf(project.id);
+      const object = world.getObjectByName(project.objectName);
+      if (object && count > 1) object.scale.setScalar(1 + Math.min(0.18, (count - 1) * 0.035));
+    });
   }
 
   function makeSelectionRing() {
@@ -838,6 +1103,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function conditionOf(plant) {
     const fit = lightFit(plant);
     if (plant.hydration < 42) return { label: "drooping", icon: "○" };
+    if (plant.needsRehabilitation) return { label: "stressed", icon: "○" };
+    if (plant.lifeStage === "juvenile") return { label: "growing", icon: "◔" };
+    if (plant.rootComfort !== "comfortable") return { label: "root-bound", icon: "◑" };
     if (fit.level === "poor") return { label: "light-stressed", icon: "◐" };
     if (plant.recoveredToday && fit.level !== "poor") return { label: "recovering", icon: "◕" };
     if (plant.hydration >= 68 && fit.level === "ideal") return { label: "thriving", icon: "●" };
@@ -882,18 +1150,35 @@ document.addEventListener("DOMContentLoaded", () => {
     root.userData.phase = Math.abs(hash(plant.id)) % 100;
     root.userData.ringY = 0;
     root.userData.droop = clamp((48 - plant.hydration) / 40, 0, 1);
+    root.userData.lifeScale = plant.lifeStage === "juvenile" ? 0.68 : 1;
     root.updateMatrixWorld(true);
     root.userData.modelTop = new THREE.Box3().setFromObject(root).max.y;
     const home = SLOT_DATA[plant.slot];
-    root.scale.setScalar(home ? scaleForSlot(root, home) : 0.78);
-    interactive.push(root);
+    root.userData.looseScale = 0.78 * root.userData.lifeScale;
+    root.scale.setScalar(home ? scaleForSlot(root, home) : root.userData.looseScale);
+    if (!plant.benchStatus) interactive.push(root);
     return root;
   }
 
   function scaleForSlot(object, slot) {
-    if (!slot?.ceilingY || !object?.userData.modelTop) return slot?.size || 0.78;
+    if (!slot?.ceilingY || !object?.userData.modelTop) return (slot?.size || 0.78) * (object?.userData.lifeScale || 1);
     const clearance = Math.max(0.1, slot.ceilingY - slot.y - 0.09);
-    return Math.min(slot.size, clearance / object.userData.modelTop);
+    return Math.min(slot.size * (object.userData.lifeScale || 1), clearance / object.userData.modelTop);
+  }
+
+  function stagingPosition(index) {
+    if (index < staging.length) return staging[index].clone();
+    const overflowIndex = index - staging.length;
+    const positions = state.upgrades.deliveryRack ? [...rackStaging, ...floorStaging] : floorStaging;
+    return positions[overflowIndex % positions.length].clone();
+  }
+
+  function looseScaleAt(position, object) {
+    if (!object) return 0.78;
+    if (state.upgrades.deliveryRack && position.z > -0.7 && position.z < 0.2 && position.x > 4) {
+      return Math.min(object.userData.looseScale || 0.78, 0.62);
+    }
+    return object.userData.looseScale || 0.78;
   }
 
   function hash(text) {
@@ -912,7 +1197,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const slot = SLOT_DATA[plant.slot];
         object.position.set(slot.x, slot.y, slot.z);
       } else {
-        object.position.copy(staging[loose % staging.length]);
+        const position = stagingPosition(loose);
+        object.position.copy(position);
+        object.scale.setScalar(looseScaleAt(position, object));
         loose += 1;
       }
       world.add(object);
@@ -974,13 +1261,20 @@ document.addEventListener("DOMContentLoaded", () => {
       { threshold: 60, name: "Trusted Plantkeeper" },
       { threshold: 120, name: "Shop in Full Bloom" },
     ];
-    const currentIndex = stages.findLastIndex((stage) => state.bloom >= stage.threshold);
+    const earnedBloom = Math.max(0, Number(state.lifetimeBloom) || state.bloom);
+    const currentIndex = stages.findLastIndex((stage) => earnedBloom >= stage.threshold);
     const current = stages[Math.max(0, currentIndex)];
     const next = stages[currentIndex + 1];
     return {
       name: current.name,
-      copy: next ? `${next.threshold - state.bloom} Bloom to ${next.name}` : "The whole neighborhood knows your windows",
+      copy: next ? `${next.threshold - earnedBloom} Bloom to ${next.name}` : "The whole neighborhood knows your windows",
     };
+  }
+
+  function earnBloom(amount) {
+    const earned = Math.max(0, Number(amount) || 0);
+    state.bloom += earned;
+    state.lifetimeBloom = Math.max(0, Number(state.lifetimeBloom) || 0) + earned;
   }
 
   function addWeekStat(key, amount = 1) {
@@ -994,7 +1288,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.weeklyObjective.claimed = true;
     const reward = state.weeklyObjective.reward || {};
     state.coins += Number(reward.coins) || 0;
-    state.bloom += Number(reward.bloom) || 0;
+    earnBloom(Number(reward.bloom) || 0);
     return ` Weekly goal complete—+${Number(reward.coins) || 0} coins and +${Number(reward.bloom) || 0} Bloom!`;
   }
 
@@ -1003,7 +1297,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!goal || goal.claimed || !plant?.traits.includes(goal.trait) || slot?.zone !== goal.zone) return false;
     goal.claimed = true;
     state.coins += goal.rewardCoins;
-    state.bloom += goal.rewardBloom;
+    earnBloom(goal.rewardBloom);
     return true;
   }
 
@@ -1016,7 +1310,10 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.priceButtons.forEach((button) => button.addEventListener("click", () => setPriceBand(button.dataset.priceBand)));
     ui.nextDay?.addEventListener("click", nextDay);
     ui.upgradeButton?.addEventListener("click", () => openModal(ui.upgradeModal, true));
+    ui.projectFund?.addEventListener("click", fundCurrentProject);
     ui.closeUpgrades?.addEventListener("click", () => openModal(ui.upgradeModal, false));
+    ui.benchButton?.addEventListener("click", () => openModal(ui.benchModal, true));
+    ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
     ui.helpButton?.addEventListener("click", () => openModal(ui.helpModal, true));
     ui.closeHelp?.addEventListener("click", () => openModal(ui.helpModal, false));
     ui.soundButton?.addEventListener("click", toggleSound);
@@ -1096,7 +1393,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ui.supplierTitle) ui.supplierTitle.textContent = `${calendar.weekday} · Week ${calendar.week}`;
     if (ui.supplierForecast) {
       const needs = [...new Set(state.customers.map((customer) => customer.need))];
-      ui.supplierForecast.textContent = `Neighborhood notes: ${needs.join(", ")}. ${weeklyObjectiveLabel(state.weeklyObjective)}. You have ${state.inventory.length}/${state.inventoryCapacity} plants and ${state.coins} coins.`;
+      const trade = dailyTradeProfile({
+        day: state.day,
+        inventoryCount: state.inventory.length,
+        capacity: state.inventoryCapacity,
+        visitorBonus: state.upgrades.shopSign ? 1 : 0,
+        serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
+      });
+      const debtCopy = state.outstandingCosts ? ` ${coinCopy(state.outstandingCosts)} are still due.` : "";
+      const overstockCopy = calendar.week >= 4
+        ? " Stock above the closing target uses 2 extra coins per plant."
+        : "";
+      ui.supplierForecast.textContent = `${state.customers.length} visitors need ${needs.join(", ")}. Today’s shop cost is ${coinCopy(state.dailyOperatingCost)}.${debtCopy}${overstockCopy} ${trade.pressureCopy}`;
     }
     if (ui.supplierStatus) {
       const newPlants = SPECIES.filter((species) => species.unlockWeek === calendar.week).map((species) => species.name);
@@ -1105,7 +1413,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const arrivals = calendar.isMonday && calendar.week > 1 && arrivalNames.length
         ? `New this week: ${arrivalNames.join(" · ")}. `
         : "";
-      ui.supplierStatus.textContent = `${arrivals}Choose one delivery; unsold plants stay in your shop.`;
+      ui.supplierStatus.textContent = `${arrivals}${weeklyObjectiveLabel(state.weeklyObjective)}. Choose one delivery; unsold plants stay in your shop.`;
     }
     ui.supplierOptions.replaceChildren();
     state.supplierOptions.forEach((lot, index) => {
@@ -1267,12 +1575,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function openModal(element, open) {
     if (!element) return;
+    if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal].includes(element)) {
+      toast("Finish the current shop moment first.");
+      return;
+    }
     if (element === ui.upgradeModal && open) renderUpgrades();
+    if (element === ui.benchModal && open) renderBench();
     if (open) run.modalReturnFocus = document.activeElement;
     element.hidden = !open;
     element.classList.toggle("is-open", open);
     element.setAttribute("aria-hidden", String(!open));
-    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.report, ui.supplierBoard].some((modal) => modal && !modal.hidden);
+    if (element === ui.benchModal && ui.benchButton) ui.benchButton.setAttribute("aria-expanded", String(open));
+    const anyModalOpen = [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.report, ui.supplierBoard]
+      .some((modal) => modal && !modal.hidden);
     if (ui.game) ui.game.inert = anyModalOpen;
     if (open) {
       requestAnimationFrame(() => element.querySelector("button:not([disabled])")?.focus());
@@ -1283,7 +1598,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function currentOpenModal() {
-    return [ui.supplierBoard, ui.report, ui.upgradeModal, ui.helpModal]
+    return [ui.supplierBoard, ui.report, ui.benchModal, ui.upgradeModal, ui.helpModal]
       .find((modal) => modal && !modal.hidden) || null;
   }
 
@@ -1300,80 +1615,399 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function renderUpgrades() {
-    if (!ui.upgradeOptions) return;
-    ui.upgradeOptions.replaceChildren();
-    const addCard = ({ owned, title, ownedTitle, copy, ownedCopy, cost, action }) => {
-      const card = document.createElement("article");
-      card.className = "upgrade-card";
-      const heading = document.createElement("h3");
-      heading.textContent = owned ? ownedTitle : title;
-      const detail = document.createElement("p");
-      detail.textContent = owned ? ownedCopy : `${cost} coins · ${copy}`;
+  const benchJobInfo = {
+    [BENCH_JOB_TYPES.REPOT]: {
+      name: "Repot",
+      copy: "Fresh soil, comfortable roots, and +4 base value.",
+    },
+    [BENCH_JOB_TYPES.REHABILITATE]: {
+      name: "Rehabilitate",
+      copy: "Restore a stressed plant and protect it for two days.",
+    },
+    [BENCH_JOB_TYPES.PROPAGATE]: {
+      name: "Propagate",
+      copy: "Create one juvenile cutting. It matures in three mornings.",
+    },
+  };
+
+  function benchValidation(type, plant) {
+    if (state.phase !== "preparation") {
+      return { ok: false, message: "Start bench work during morning preparation." };
+    }
+    if (state.crates > 0 || run.crateAnimation) {
+      return { ok: false, message: "Open every carton before bench work starts." };
+    }
+    const jobCost = BENCH_JOB_COSTS[type]?.coins || 0;
+    const freeCoins = discretionaryCoins();
+    if (jobCost > freeCoins) {
+      return {
+        ok: false,
+        code: "shop-cost-reserve",
+        message: `${coinCopy(reservedShopCoins())} are set aside for shop bills. You need ${coinCopy(jobCost - freeCoins)} more for this job.`,
+      };
+    }
+    const result = validateBenchJob({
+      type,
+      plantId: plant?.id,
+      inventory: state.inventory,
+      benchState: state.benchState,
+      coins: state.coins,
+      bloom: state.bloom,
+      day: state.day,
+      capacity: state.inventoryCapacity,
+      condition: plant ? conditionOf(plant).label : null,
+    });
+    if (!result.ok) return result;
+    const preview = startBenchJob({
+      type,
+      plantId: plant.id,
+      inventory: state.inventory,
+      benchState: state.benchState,
+      coins: state.coins,
+      bloom: state.bloom,
+      day: state.day,
+      capacity: state.inventoryCapacity,
+      condition: conditionOf(plant).label,
+    });
+    if (preview.ok && !inventoryCoversCustomers(preview.inventory, state.customers.slice(state.customerIndex))) {
+      return {
+        ...result,
+        ok: false,
+        code: "needed-for-visitors",
+        message: "Keep this plant available. It is needed for today’s visitors.",
+      };
+    }
+    return result;
+  }
+
+  function renderBench() {
+    if (!ui.benchPlants || !ui.benchActions) return;
+    state.benchState = {
+      ...migrateBenchState(state.benchState),
+      slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+    };
+    const jobs = state.benchState.jobs || [];
+    const availablePlants = state.inventory.filter((plant) => !plant.benchStatus);
+    if (!availablePlants.some((plant) => plant.id === run.benchPlantId)) {
+      run.benchPlantId = availablePlants[0]?.id || null;
+    }
+    const selectedPlant = state.inventory.find((plant) => plant.id === run.benchPlantId) || null;
+    if (ui.benchSummary) {
+      const reserve = reservedShopCoins();
+      ui.benchSummary.textContent = `${jobs.length}/${state.benchState.slotCount} bench slots in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${coinCopy(reserve)} are set aside for shop bills.` : ""}`;
+    }
+    if (ui.benchStatus) {
+      ui.benchStatus.textContent = run.benchMessage;
+      ui.benchStatus.dataset.tone = jobs.length >= state.benchState.slotCount ? "warning" : "";
+    }
+    ui.benchPlants.replaceChildren();
+    if (!state.inventory.length) {
+      const empty = document.createElement("p");
+      empty.className = "bench-empty";
+      empty.textContent = "There are no plants in the shop.";
+      ui.benchPlants.append(empty);
+    }
+    state.inventory.forEach((plant) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "button button-primary upgrade-buy";
-      button.textContent = owned ? "Already installed" : `Install · ${cost}`;
-      button.disabled = owned;
-      button.addEventListener("click", action);
-      card.append(heading, detail, button);
-      ui.upgradeOptions.append(card);
-    };
-    addCard({
-      owned: state.upgrades.growLamp,
-      title: "Secondhand grow lamp",
-      ownedTitle: "Grow lamp installed",
-      copy: "Automatically mists humidity-loving displayed plants each new morning.",
-      ownedCopy: "Its honey-colored light handles morning mist for plants that enjoy it.",
-      cost: 50,
-      action: buyGrowLamp,
+      button.className = "bench-plant";
+      button.disabled = Boolean(plant.benchStatus);
+      const selected = plant.id === run.benchPlantId;
+      button.setAttribute("aria-pressed", String(selected));
+      button.classList.toggle("is-selected", selected);
+      const name = document.createElement("strong");
+      name.textContent = plant.species;
+      const detail = document.createElement("small");
+      const condition = conditionOf(plant).label;
+      const stage = plant.lifeStage === "juvenile"
+        ? `juvenile · ${plant.maturityDaysRemaining} mornings to mature`
+        : `${plant.rootComfort === "comfortable" ? "roots comfortable" : "root-bound"}`;
+      detail.textContent = plant.benchStatus
+        ? `${benchJobInfo[plant.benchStatus.type]?.name || "Bench job"} · ready Day ${plant.benchStatus.readyDay}`
+        : `${condition} · ${stage}`;
+      button.append(name, detail);
+      button.addEventListener("click", () => {
+        run.benchPlantId = plant.id;
+        run.benchMessage = `${plant.species} selected. Choose one job.`;
+        renderBench();
+      });
+      ui.benchPlants.append(button);
     });
-    addCard({
-      owned: state.upgrades.rainBarrel,
-      title: "Little rain barrel",
-      ownedTitle: "Rain barrel installed",
-      copy: "Plants dry out 35% more slowly while the shop is open.",
-      ownedCopy: "Collected rain keeps every pot comfortable for longer.",
-      cost: 45,
-      action: buyRainBarrel,
+
+    ui.benchActions.replaceChildren();
+    jobs.forEach((job) => {
+      const card = document.createElement("article");
+      card.className = "bench-job";
+      card.dataset.state = job.status;
+      const name = document.createElement("strong");
+      const plant = state.inventory.find((item) => item.id === job.plantId);
+      name.textContent = `${benchJobInfo[job.type]?.name || "Bench job"} · ${plant?.species || "Plant"}`;
+      const detail = document.createElement("small");
+      detail.textContent = job.status === "ready" ? "Ready. Waiting for stock space." : `Finishes on Day ${job.readyDay}.`;
+      card.append(name, detail);
+      ui.benchActions.append(card);
+    });
+    Object.values(BENCH_JOB_TYPES).forEach((type) => {
+      const info = benchJobInfo[type];
+      const validation = benchValidation(type, selectedPlant);
+      const cost = BENCH_JOB_COSTS[type];
+      const duration = BENCH_JOB_DURATIONS[type];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "bench-job";
+      button.disabled = !validation.ok;
+      button.title = validation.ok ? info.copy : validation.message;
+      const name = document.createElement("strong");
+      name.textContent = info.name;
+      const detail = document.createElement("small");
+      detail.textContent = `${cost.coins} coins${cost.bloom ? ` + ${cost.bloom} Bloom` : ""} · ${duration} ${duration === 1 ? "morning" : "mornings"}. ${validation.ok ? info.copy : validation.message}`;
+      button.append(name, detail);
+      button.addEventListener("click", () => startSelectedBenchJob(type));
+      ui.benchActions.append(button);
     });
   }
 
-  function buyGrowLamp() {
-    if (state.upgrades.growLamp) return;
-    if (state.coins < 50) {
+  function startSelectedBenchJob(type) {
+    const plant = state.inventory.find((item) => item.id === run.benchPlantId);
+    const validation = benchValidation(type, plant);
+    if (!validation.ok) {
+      run.benchMessage = validation.message;
       sound("error");
-      toast(`You need ${50 - state.coins} more coins. The lamp will wait.`);
+      renderBench();
       return;
     }
-    state.coins -= 50;
-    state.upgrades.growLamp = true;
-    state.bloom += 4;
-    const lamp = world.getObjectByName("grow-lamp");
-    if (lamp) lamp.visible = true;
+    const result = startBenchJob({
+      type,
+      plantId: plant.id,
+      inventory: state.inventory,
+      benchState: state.benchState,
+      coins: state.coins,
+      bloom: state.bloom,
+      day: state.day,
+      capacity: state.inventoryCapacity,
+      condition: conditionOf(plant).label,
+    });
+    if (!result.ok) {
+      run.benchMessage = result.message;
+      sound("error");
+      renderBench();
+      return;
+    }
+    state.inventory = result.inventory;
+    state.benchState = result.benchState;
+    state.coins = result.coins;
+    state.bloom = result.bloom;
+    run.benchPlantId = null;
+    run.benchMessage = result.message;
+    run.selected = null;
+    run.carried = null;
+    run.moveOrigin = null;
+    document.body.dataset.selection = "none";
+    rebuildPlants();
     save();
     sound("upgrade");
-    toast("The grow lamp hums awake. Even the fern looks impressed.");
-    renderUpgrades();
+    renderBench();
     updateUi();
   }
 
-  function buyRainBarrel() {
-    if (state.upgrades.rainBarrel) return;
-    if (state.coins < 45) {
-      sound("error");
-      toast(`You need ${45 - state.coins} more coins. The clouds are patient.`);
+  function renderUpgrades() {
+    if (!ui.upgradeOptions) return;
+    ui.upgradeOptions.replaceChildren();
+    const upgrades = [
+      {
+        key: "growLamp",
+        title: "Secondhand grow lamp",
+        ownedTitle: "Grow lamp installed",
+        copy: "Mists humidity-loving display plants each morning.",
+        ownedCopy: "Its honey light handles the morning mist.",
+        coins: 50,
+        bloom: 10,
+        objectName: "grow-lamp",
+        message: "The grow lamp hums awake. Even the fern looks impressed.",
+      },
+      {
+        key: "rainBarrel",
+        title: "Little rain barrel",
+        ownedTitle: "Rain barrel installed",
+        copy: "Makes every plant dry out 35% more slowly.",
+        ownedCopy: "Collected rain keeps every pot comfortable for longer.",
+        coins: 45,
+        bloom: 8,
+        objectName: "rain-barrel",
+        message: "The rain barrel is ready. Every plant exhales at once.",
+      },
+      {
+        key: "deliveryRack",
+        title: "Nursery delivery rack",
+        ownedTitle: "Delivery rack installed",
+        copy: "Raises shop capacity from 12 plants to 16.",
+        ownedCopy: "Four more plants can wait safely between sales.",
+        coins: 90,
+        bloom: 18,
+        objectName: "delivery-rack",
+        message: "The new rack adds four real stock spaces to the room.",
+      },
+      {
+        key: "benchShelf",
+        title: "Second bench shelf",
+        ownedTitle: "Bench shelf installed",
+        copy: "Runs two care bench jobs at the same time.",
+        ownedCopy: "Two plants can now receive focused care together.",
+        coins: 75,
+        bloom: 20,
+        objectName: "bench-shelf",
+        message: "The care bench now has room for two jobs.",
+      },
+      {
+        key: "shopSign",
+        title: "Hand-painted shop sign",
+        ownedTitle: "Shop sign installed",
+        copy: "Brings one extra visitor from the next morning onward.",
+        ownedCopy: "The brighter sign brings one extra daily visitor.",
+        coins: 110,
+        bloom: 30,
+        objectName: "shop-sign-upgrade",
+        message: "The new sign turns a few more heads on the street.",
+      },
+    ];
+    const addCard = (upgrade) => {
+      const owned = Boolean(state.upgrades[upgrade.key]);
+      const card = document.createElement("article");
+      card.className = "upgrade-card";
+      const heading = document.createElement("h3");
+      heading.textContent = owned ? upgrade.ownedTitle : upgrade.title;
+      const detail = document.createElement("p");
+      const costCopy = `${upgrade.coins} coins · ${upgrade.bloom} Bloom`;
+      detail.textContent = owned ? upgrade.ownedCopy : `${costCopy} · ${upgrade.copy}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "button button-primary upgrade-buy";
+      button.textContent = owned ? "Already installed" : `Install · ${costCopy}`;
+      button.disabled = owned;
+      button.addEventListener("click", () => buyUpgrade(upgrade));
+      card.append(heading, detail, button);
+      ui.upgradeOptions.append(card);
+    };
+    upgrades.forEach(addCard);
+    renderProjectPanel();
+  }
+
+  function renderProjectPanel() {
+    if (!ui.projectPanel) return;
+    const calendar = calendarForDay(state.day);
+    const project = projectForWeek(calendar.week, state.projectState);
+    const total = Math.max(0, Number(state.projectState?.total) || 0);
+    ui.projectPanel.classList.toggle("is-funded", Boolean(project?.funded));
+    if (!project) {
+      if (ui.projectTitle) ui.projectTitle.textContent = "Weekly shop projects";
+      if (ui.projectCopy) ui.projectCopy.textContent = `Projects unlock in Week ${SHOP_PROJECT_START_WEEK}. They give coins and Bloom a lasting use without changing the gentle opening weeks.`;
+      if (ui.projectProgress) ui.projectProgress.textContent = `${total} ${total === 1 ? "project" : "projects"} funded`;
+      if (ui.projectFund) {
+        ui.projectFund.disabled = true;
+        ui.projectFund.textContent = `Locked until Week ${SHOP_PROJECT_START_WEEK}`;
+      }
       return;
     }
-    state.coins -= 45;
-    state.upgrades.rainBarrel = true;
-    state.bloom += 4;
-    const barrel = world.getObjectByName("rain-barrel");
-    if (barrel) barrel.visible = true;
+    const validation = validateProjectFunding({
+      week: calendar.week,
+      projectState: state.projectState,
+      coins: discretionaryCoins(),
+      bloom: state.bloom,
+    });
+    if (ui.projectTitle) ui.projectTitle.textContent = project.title;
+    if (ui.projectCopy) ui.projectCopy.textContent = `${project.copy} Each time this project returns, its display grows a little richer.`;
+    if (ui.projectProgress) {
+      const count = Math.max(0, Number(state.projectState?.counts?.[project.id]) || 0);
+      ui.projectProgress.textContent = project.funded
+        ? `Funded this week · ${total} total projects · ${count} ${project.title} ${count === 1 ? "stage" : "stages"}`
+        : `${project.cost.coins} coins + ${project.cost.bloom} Bloom · ${total} projects funded so far`;
+    }
+    if (ui.projectFund) {
+      ui.projectFund.disabled = !validation.ok;
+      ui.projectFund.textContent = project.funded
+        ? "Funded this week ✓"
+        : validation.code === "insufficient-resources"
+          ? validation.message
+          : `Fund ${project.title}`;
+    }
+  }
+
+  function fundCurrentProject() {
+    const calendar = calendarForDay(state.day);
+    const spendableValidation = validateProjectFunding({
+      week: calendar.week,
+      projectState: state.projectState,
+      coins: discretionaryCoins(),
+      bloom: state.bloom,
+    });
+    if (!spendableValidation.ok) {
+      sound("error");
+      const reserve = reservedShopCoins();
+      toast(reserve && spendableValidation.code === "insufficient-resources"
+        ? `${coinCopy(reserve)} are set aside for shop bills. ${spendableValidation.message}`
+        : spendableValidation.message);
+      renderProjectPanel();
+      return;
+    }
+    const result = fundWeeklyProject({
+      week: calendar.week,
+      projectState: state.projectState,
+      coins: state.coins,
+      bloom: state.bloom,
+    });
+    if (!result.ok) {
+      sound("error");
+      toast(result.message);
+      renderProjectPanel();
+      return;
+    }
+    state.projectState = result.projectState;
+    state.coins = result.coins;
+    state.bloom = result.bloom;
+    const object = world.getObjectByName(result.project?.objectName);
+    if (object) {
+      object.visible = true;
+      const count = Math.max(1, Number(state.projectState.counts[result.project.id]) || 1);
+      object.scale.setScalar(1 + Math.min(0.18, (count - 1) * 0.035));
+    }
     save();
     sound("upgrade");
-    toast("The rain barrel is ready. Every plant exhales at once.");
+    toast(`${result.message} ${result.cost.coins} coins and ${result.cost.bloom} Bloom funded a lasting shop change.`, 4800);
+    renderProjectPanel();
+    updateUi();
+  }
+
+  function buyUpgrade(upgrade) {
+    if (!upgrade || state.upgrades[upgrade.key]) return;
+    const missingCoins = Math.max(0, upgrade.coins - discretionaryCoins());
+    const missingBloom = Math.max(0, upgrade.bloom - state.bloom);
+    if (missingCoins || missingBloom) {
+      sound("error");
+      const needs = [
+        missingCoins ? `${missingCoins} more coins` : "",
+        missingBloom ? `${missingBloom} more Bloom` : "",
+      ].filter(Boolean).join(" and ");
+      const reserve = reservedShopCoins();
+      toast(`${reserve ? `${coinCopy(reserve)} are set aside for shop bills. ` : ""}This upgrade needs ${needs}.`);
+      return;
+    }
+    state.coins -= upgrade.coins;
+    state.bloom -= upgrade.bloom;
+    state.upgrades[upgrade.key] = true;
+    if (upgrade.key === "deliveryRack") {
+      state.inventoryCapacity = Math.max(16, state.inventoryCapacity);
+      rebuildPlants();
+    }
+    if (upgrade.key === "benchShelf") {
+      state.benchState = { ...migrateBenchState(state.benchState), slotCount: 2 };
+    }
+    const object = world.getObjectByName(upgrade.objectName);
+    if (object) object.visible = true;
+    save();
+    sound("upgrade");
+    toast(upgrade.message);
     renderUpgrades();
+    if (ui.benchModal && !ui.benchModal.hidden) renderBench();
     updateUi();
   }
 
@@ -1505,6 +2139,10 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (kind === "plant") {
       const plant = state.inventory.find((item) => item.id === id);
       if (!plant) return;
+      if (plant.benchStatus) {
+        toast(`${plant.species} is busy at the care bench.`);
+        return;
+      }
       if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
         swapPlants(run.carried, plant.id);
         return;
@@ -1528,7 +2166,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function beginMove(plant) {
-    if (!plant) return;
+    if (!plant || plant.benchStatus) return;
     if (!Number.isInteger(plant.slot)) {
       run.carried = plant.id;
       run.moveOrigin = null;
@@ -1558,7 +2196,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function swapPlants(carriedId, targetId) {
     const carried = state.inventory.find((plant) => plant.id === carriedId);
     const other = state.inventory.find((plant) => plant.id === targetId);
-    if (!carried || !other || !Number.isInteger(other.slot)) return;
+    if (!carried || !other || carried.benchStatus || other.benchStatus || !Number.isInteger(other.slot)) return;
     if (!Number.isInteger(run.moveOrigin)) {
       const destinationIndex = other.slot;
       const destination = SLOT_DATA[destinationIndex];
@@ -1567,7 +2205,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const looseCount = state.inventory.filter((plant) => !Number.isInteger(plant.slot)
         && plant.id !== carried.id
         && plant.id !== other.id).length;
-      const bench = staging[looseCount % staging.length];
+      const bench = stagingPosition(looseCount);
       carried.slot = destinationIndex;
       other.slot = null;
       if (carriedObject) queueMover({
@@ -1585,7 +2223,7 @@ document.addEventListener("DOMContentLoaded", () => {
         from: otherObject.position.clone(),
         to: bench.clone(),
         startScale: otherObject.scale.x,
-        endScale: 0.78,
+        endScale: looseScaleAt(bench, otherObject),
         time: 0,
         duration: 0.5,
         arc: 0.52,
@@ -1657,12 +2295,14 @@ document.addEventListener("DOMContentLoaded", () => {
       hydration: rescue ? 30 + ((state.day + state.crates * 3) % 11) : 70 + ((state.day + state.crates * 7) % 21),
       supplierLot: state.selectedLotId,
       acquisitionCost: Number.isFinite(delivery?.acquisitionCost) ? delivery.acquisitionCost : 0,
+      needsRehabilitation: rescue,
+      arrivalDay: state.day,
     });
     state.inventory.push(plant);
     state.crates -= 1;
     const object = createPlant(plant);
     const looseCount = state.inventory.filter((item) => !Number.isInteger(item.slot)).length;
-    const target = staging[(looseCount - 1) % staging.length];
+    const target = stagingPosition(looseCount - 1);
     object.position.copy(target);
     object.scale.setScalar(0.05);
     object.visible = false;
@@ -1712,7 +2352,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       object.visible = true;
       object.position.copy(target);
-      object.scale.setScalar(0.78);
+      object.scale.setScalar(looseScaleAt(target, object));
       finishCartonOpening(opening);
       return;
     }
@@ -1751,7 +2391,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const revealTop = origin.clone().add(new THREE.Vector3(0, 1.0, 0));
       object.position.lerpVectors(revealTop, target, transferEase);
       object.position.y += Math.sin(transferProgress * Math.PI) * 0.42;
-      object.scale.setScalar(lerp(0.46, 0.78, transferEase));
+      object.scale.setScalar(lerp(0.46, looseScaleAt(target, object), transferEase));
     }
 
     if (opening.time >= 2) finishCartonOpening(opening);
@@ -1766,7 +2406,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     object.visible = true;
     object.position.copy(target);
-    object.scale.setScalar(0.78);
+    object.scale.setScalar(looseScaleAt(target, object));
     run.crateAnimation = null;
     run.busy = false;
     run.selected = { kind: "plant", id: plant.id, object };
@@ -1816,7 +2456,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function placePlant(id, slotIndex) {
     const plant = state.inventory.find((item) => item.id === id);
     const target = SLOT_DATA[slotIndex];
-    if (!plant || !target) return;
+    if (!plant || plant.benchStatus || !target) return;
     if (state.inventory.some((item) => item.slot === slotIndex && item.id !== id)) {
       toast("That spot already has a tenant.");
       return;
@@ -1850,7 +2490,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setPriceBand(band) {
     if (run.busy || !PRICE_BANDS[band] || run.selected?.kind !== "plant") return;
     const plant = state.inventory.find((item) => item.id === run.selected.id);
-    if (!plant) return;
+    if (!plant || plant.benchStatus) return;
     plant.priceBand = band;
     updatePlantPriceTag(plant);
     save();
@@ -1867,7 +2507,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const plant = state.inventory.find((item) => item.id === run.selected.id);
     const object = plantObjects.get(run.selected.id);
-    if (!plant || !object) return;
+    if (!plant || plant.benchStatus || !object) return;
     const spec = speciesOf(plant);
     const beneficial = spec.beneficialCare.includes(type);
     const canRewater = type === "water" && plant.hydration < 78;
@@ -1887,7 +2527,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let weeklyRewardCopy = "";
     if (firstCare && beneficial) {
       state.dailyCare += 1;
-      state.bloom += 1;
+      earnBloom(1);
       addWeekStat("care", 1);
       weeklyRewardCopy = advanceWeekGoal({ metric: "beneficialCare", value: 1 });
     }
@@ -1898,7 +2538,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (wasDrooping && !plant.recoveredToday) {
         plant.recoveredToday = true;
         state.dailyRecoveries += 1;
-        state.bloom += 1;
+        earnBloom(1);
         addWeekStat("rescues", 1);
         weeklyRewardCopy ||= advanceWeekGoal({ metric: "thirstRescues", value: 1 });
         recoveryReward = true;
@@ -1930,6 +2570,16 @@ document.addEventListener("DOMContentLoaded", () => {
   function offerPlant(plant) {
     const person = currentCustomer();
     if (!person) return;
+    if (plant.benchStatus) {
+      sound("error");
+      toast(`${plant.species} is still on the care bench.`);
+      return;
+    }
+    if (plant.lifeStage === "juvenile") {
+      sound("error");
+      toast(`${plant.species} is still growing. It needs ${plant.maturityDaysRemaining} more mornings before sale.`);
+      return;
+    }
     if (!plant.traits.includes(person.need)) {
       sound("error");
       toast(`${person.name} likes it, but really needs something ${person.need}.`);
@@ -1953,7 +2603,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const thriving = condition.label === "thriving";
     const idealLight = lightFit(plant).level === "ideal";
     const extras = [wishMet, Boolean(careWishMet), thriving].filter(Boolean).length;
-    if (["drooping", "light-stressed"].includes(condition.label) && band !== "quick") {
+    if (["drooping", "stressed", "root-bound", "light-stressed"].includes(condition.label) && band !== "quick") {
       sound("error");
       toast(`${person.name} notices that ${plant.species} is ${condition.label}. Improve its condition or use a Quick tag.`);
       return;
@@ -1978,10 +2628,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const bloomReward = 2 + extras;
     const costOfGoods = Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
     state.coins += payout;
-    state.bloom += bloomReward;
+    earnBloom(bloomReward);
     if (perfect) state.dailyPerfects += 1;
     const perfectDayBonus = perfect && state.dailyPerfects === 3;
-    if (perfectDayBonus) state.bloom += 8;
+    if (perfectDayBonus) earnBloom(8);
     state.dailyRevenue += payout;
     state.dailyCostOfGoods += costOfGoods;
     state.dailySales += 1;
@@ -2031,7 +2681,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mode: "exit",
       time: 0,
       delay: reduceMotion ? 0 : 0.58,
-      advance: state.customerIndex >= 3 ? "report" : "customer",
+      advance: state.customerIndex >= state.customers.length ? "report" : "customer",
     };
     run.lastSaleGrade = perfect ? "perfect" : extras >= 1 ? "lovely" : "good";
     save();
@@ -2044,7 +2694,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function moonMoth() {
     state.mothSeen = true;
-    state.bloom += 5;
+    earnBloom(5);
     const root = new THREE.Group();
     const glow = material(0xffefba, { emissive: 0xffcc72, emissiveIntensity: 1.5, side: THREE.DoubleSide });
     const body = cylinder(root, 0.055, 0.075, 0.32, [0, 0, 0], material(0x63584a), 7);
@@ -2165,7 +2815,52 @@ document.addEventListener("DOMContentLoaded", () => {
     return advanceWeekGoal({ metric: "healthyDisplayDays", value: 1 });
   }
 
+  function settleOperatingCost() {
+    if (state.dailyOperatingCostPaid) return;
+    const profile = dailyTradeProfile({
+      day: state.day,
+      inventoryCount: state.inventory.length,
+      capacity: state.inventoryCapacity,
+      visitorBonus: state.upgrades.shopSign ? 1 : 0,
+      serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
+    });
+    const calendar = calendarForDay(state.day);
+    const closingStockTarget = Math.min(
+      state.inventoryCapacity,
+      (state.customers?.length || profile.visitorCount) + profile.choiceBuffer,
+    );
+    state.dailyOverstockCost = closingOverstockCost({
+      week: calendar.week,
+      inventoryCount: state.inventory.length,
+      stockTarget: closingStockTarget,
+    });
+    const baseCost = Math.max(0, Math.floor(Number(state.dailyOperatingCost) || 0));
+    const currentDue = baseCost + state.dailyOverstockCost;
+    const oldBalance = Math.max(0, Math.floor(Number(state.outstandingCosts) || 0));
+    const due = currentDue + oldBalance;
+    const paid = Math.min(Math.max(0, state.coins), due);
+    state.coins -= paid;
+    state.dailyOperatingCostPaid = true;
+    state.dailyOperatingPaidAmount = paid;
+    let shortfall = due - paid;
+    if (shortfall > 0 && !state.neighborhoodGrantUsed) {
+      state.neighborhoodGrantUsed = true;
+      shortfall = 0;
+    }
+    state.dailyOperatingShortfall = due - paid;
+    state.outstandingCosts = Math.min(MAX_OUTSTANDING_COSTS, shortfall);
+    addWeekStat("operatingCosts", currentDue);
+    addWeekStat("profit", -currentDue);
+  }
+
   function showReport() {
+    [ui.helpModal, ui.upgradeModal, ui.benchModal].forEach((modal) => {
+      if (!modal) return;
+      modal.hidden = true;
+      modal.classList.remove("is-open");
+      modal.setAttribute("aria-hidden", "true");
+    });
+    if (ui.benchButton) ui.benchButton.setAttribute("aria-expanded", "false");
     state.phase = "report";
     run.arranging = false;
     cancelMove();
@@ -2178,41 +2873,53 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (ui.game) ui.game.inert = true;
     requestAnimationFrame(() => ui.nextDay?.focus());
+    settleOperatingCost();
     const calendar = calendarForDay(state.day);
     const closingRewardCopy = recordClosingProgress();
     if (ui.reportTitle) ui.reportTitle.textContent = calendar.isFriday
       ? `Week ${String(calendar.week).padStart(2, "0")} complete`
       : `${calendar.weekday} complete`;
     if (ui.reportCopy) {
-      const grossProfit = state.dailyRevenue - state.dailyCostOfGoods;
-      const bloomEarned = Math.max(0, state.bloom - state.dailyBloomStart);
-      const profitCopy = `${grossProfit >= 0 ? "+" : ""}${grossProfit} coins`;
+      const netProfit = state.dailyRevenue - state.dailyCostOfGoods - state.dailyOperatingCost - state.dailyOverstockCost;
+      const bloomChange = state.bloom - state.dailyBloomStart;
+      const profitCopy = `${netProfit >= 0 ? "+" : ""}${coinCopy(netProfit)}`;
       const leadCopy = state.dailySales
         ? `${state.dailySales} plant${state.dailySales === 1 ? "" : "s"} found ${state.dailySales === 1 ? "a new home" : "new homes"}.`
         : "The shop was quiet today.";
-      const bloomCopy = `+${bloomEarned}`;
+      const bloomCopy = `${bloomChange >= 0 ? "+" : ""}${bloomChange}`;
       const stockCopy = `${state.inventory.length} plant${state.inventory.length === 1 ? "" : "s"}`;
       let highlightCopy = "The shop is ready for another morning.";
       if (calendar.isFriday) {
         const sales = Number(state.weekStats?.sales) || 0;
         const profit = Number(state.weekStats?.profit) || 0;
         const objective = state.weeklyObjective?.completed ? "Weekly goal complete." : `${weeklyObjectiveLabel(state.weeklyObjective)}.`;
-        highlightCopy = `Week ${calendar.week}: ${sales} plants rehomed · ${profit >= 0 ? "+" : ""}${profit} coins profit. ${objective}`;
+        highlightCopy = `Week ${calendar.week}: ${sales} plants rehomed · ${profit >= 0 ? "+" : ""}${coinCopy(profit)} profit. ${objective}`;
       } else if (state.displayGoal?.claimed) highlightCopy = "Display challenge complete. The front shelves really worked.";
       else if (state.dailyPerfects) highlightCopy = "A customer found exactly what they were hoping for.";
       else if (state.dailyRecoveries) highlightCopy = "A thirsty plant bounced back beautifully.";
       else if (state.dailyCare >= 6) highlightCopy = "The leaves are looking immaculate.";
+      if (state.dailyOperatingCost > 0 && !calendar.isFriday) {
+        highlightCopy += ` Daily costs used ${coinCopy(state.dailyOperatingCost)}.`;
+      }
+      if (state.dailyOverstockCost > 0) {
+        highlightCopy += ` Extra stock care used ${coinCopy(state.dailyOverstockCost)}.`;
+      }
+      if (state.dailyOperatingShortfall > 0) {
+        highlightCopy += state.outstandingCosts > 0
+          ? ` ${coinCopy(state.outstandingCosts)} carry into tomorrow.`
+          : ` The neighborhood fund covered ${coinCopy(state.dailyOperatingShortfall)}. This one-time help is now used.`;
+      }
       if (closingRewardCopy) highlightCopy += closingRewardCopy;
 
       if (ui.reportProfit && ui.reportLead && ui.reportBloom && ui.reportStock && ui.reportHighlight) {
         ui.reportProfit.textContent = profitCopy;
-        ui.reportProfit.dataset.tone = grossProfit >= 0 ? "positive" : "negative";
+        ui.reportProfit.dataset.tone = netProfit >= 0 ? "positive" : "negative";
         ui.reportLead.textContent = leadCopy;
         ui.reportBloom.textContent = bloomCopy;
         ui.reportStock.textContent = stockCopy;
         ui.reportHighlight.lastChild.textContent = ` ${highlightCopy}`;
       } else {
-        ui.reportCopy.textContent = `${leadCopy} ${profitCopy} gross profit, ${bloomCopy} Bloom, and ${stockCopy} ready for tomorrow.`;
+        ui.reportCopy.textContent = `${leadCopy} ${profitCopy} net profit, ${bloomCopy} Bloom, and ${stockCopy} ready for tomorrow.`;
       }
     }
     sound("report");
@@ -2234,6 +2941,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyRevenue = 0;
     state.dailyStockCost = 0;
     state.dailyCostOfGoods = 0;
+    state.dailyOverstockCost = 0;
     state.accountingEstimate = false;
     state.dailyCare = 0;
     state.dailyPerfects = 0;
@@ -2241,12 +2949,45 @@ document.addEventListener("DOMContentLoaded", () => {
     state.customers = [];
     state.crateQueue = [];
     state.displayGoal = null;
+    const maturedPlants = [];
+    const newlyRootBound = [];
+    state.inventory.forEach((plant) => {
+      if (plant.benchStatus) return;
+      if (plant.lifeStage === "juvenile") {
+        plant.maturityDaysRemaining = Math.max(0, (Number(plant.maturityDaysRemaining) || 0) - 1);
+        if (plant.maturityDaysRemaining === 0) {
+          plant.lifeStage = "mature";
+          plant.rootAgeDays = 0;
+          maturedPlants.push(plant.species);
+        }
+        return;
+      }
+      plant.rootAgeDays = Math.max(0, Number(plant.rootAgeDays) || 0) + 1;
+      if (plant.rootAgeDays >= ROOT_BOUND_AFTER_DAYS && plant.rootComfort === "comfortable") {
+        plant.rootComfort = "cramped";
+        newlyRootBound.push(plant.species);
+      }
+    });
+    const benchMorning = advanceAndApplyBenchJobs({
+      benchState: state.benchState,
+      inventory: state.inventory,
+      day: state.day,
+      capacity: state.inventoryCapacity,
+    });
+    state.benchState = {
+      ...benchMorning.benchState,
+      slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+    };
+    state.inventory = benchMorning.inventory;
+    run.benchMessage = benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length
+      ? benchMorning.message
+      : "Choose a plant, then choose one available job.";
     state.inventory.forEach((plant) => {
       const morningMist = Boolean(state.upgrades.growLamp
         && Number.isInteger(plant.slot)
         && speciesOf(plant).beneficialCare.includes("mist"));
       plant.care = { water: false, mist: morningMist, prune: false };
-      plant.recoveredToday = false;
+      plant.recoveredToday = plant.rehabilitatedDay === state.day;
       plant.thirstWarned = plant.hydration <= 34;
     });
     setupDay(true);
@@ -2268,12 +3009,26 @@ document.addEventListener("DOMContentLoaded", () => {
     save();
     showSupplierBoard();
     sound("open");
-    toast(state.upgrades.growLamp ? "Morning. The grow lamp handled the misting shift; the nursery clipboard is ready." : "Morning. Check the neighborhood notes before booking today’s delivery.");
+    const morningNotes = [
+      benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length ? benchMorning.message : "",
+      maturedPlants.length ? `${maturedPlants.join(" and ")} ${maturedPlants.length === 1 ? "is" : "are"} mature and ready for sale.` : "",
+      newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
+      state.upgrades.growLamp ? "The grow lamp handled the morning mist." : "",
+      "The nursery clipboard is ready.",
+    ].filter(Boolean).join(" ");
+    toast(morningNotes, morningNotes.length > 110 ? 5200 : 3100);
     updateUi();
   }
 
   function updateUi(saleMessage = false) {
     const calendar = calendarForDay(state.day);
+    const trade = dailyTradeProfile({
+      day: state.day,
+      inventoryCount: state.inventory.length,
+      capacity: state.inventoryCapacity,
+      visitorBonus: state.upgrades.shopSign ? 1 : 0,
+      serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
+    });
     if (ui.day) ui.day.textContent = calendar.weekday.slice(0, 3);
     if (ui.week) ui.week.textContent = `Week ${calendar.week}`;
     if (ui.coins) ui.coins.textContent = String(state.coins);
@@ -2282,6 +3037,24 @@ document.addEventListener("DOMContentLoaded", () => {
       const standing = bloomStanding();
       ui.bloom.title = `${standing.name} · ${standing.copy}`;
     }
+    if (ui.upgradeButton) {
+      const project = projectForWeek(calendar.week, state.projectState);
+      const projectWaiting = Boolean(project && !project.funded);
+      ui.upgradeButton.classList.toggle("has-project", projectWaiting);
+      ui.upgradeButton.title = projectWaiting ? `${project.title} is available this week` : "Shop upgrades";
+      ui.upgradeButton.setAttribute("aria-label", projectWaiting ? `Shop upgrades, ${project.title} is available` : "Shop upgrades");
+    }
+    if (ui.tradeDemand) ui.tradeDemand.textContent = `${state.customers.length || trade.visitorCount} visitors`;
+    if (ui.tradeCost) {
+      const cost = Number.isFinite(state.dailyOperatingCost) ? state.dailyOperatingCost : trade.operatingCost;
+      ui.tradeCost.textContent = state.outstandingCosts
+        ? `${coinCopy(cost)} + ${coinCopy(state.outstandingCosts)} due`
+        : coinCopy(cost);
+      ui.tradeCost.title = calendar.week >= 4
+        ? "Base shop cost. Stock above the closing target uses 2 extra coins per plant."
+        : "Today’s base shop cost.";
+    }
+    if (ui.tradeStock) ui.tradeStock.textContent = `${state.inventory.length}/${state.inventoryCapacity} plants`;
     if (ui.weekObjective) {
       const label = ui.weekObjective.querySelector("strong");
       if (label) label.textContent = weeklyObjectiveLabel(state.weeklyObjective);
@@ -2325,6 +3098,13 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.arrangeButton.classList.toggle("is-active", active);
       ui.arrangeButton.title = active ? "Finish arranging displays" : "Arrange displays";
     }
+    if (ui.benchButton) {
+      const jobs = state.benchState?.jobs?.length || 0;
+      ui.benchButton.hidden = !run.started || state.phase !== "preparation";
+      ui.benchButton.classList.toggle("is-active", jobs > 0);
+      ui.benchButton.title = jobs ? `Care bench · ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Care bench";
+      ui.benchButton.setAttribute("aria-label", jobs ? `Open the care bench, ${jobs} active ${jobs === 1 ? "job" : "jobs"}` : "Open the care bench");
+    }
     if (ui.openShop) {
       const readyToOpen = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
       ui.openShop.hidden = !readyToOpen;
@@ -2364,7 +3144,8 @@ document.addEventListener("DOMContentLoaded", () => {
           ? ` Display fit: ${SLOT_DATA.find((slot) => slot.zone === state.displayGoal.zone)?.zoneLabel || state.displayGoal.zone}.`
           : "";
         title = plant.species;
-        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        const growth = plant.lifeStage === "juvenile" ? ` · juvenile, ${plant.maturityDaysRemaining} mornings to mature` : "";
+        copy = `${plant.traits.join(" · ")} · ${condition.icon} ${condition.label}${growth} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -2404,7 +3185,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const plant = selected?.kind === "plant" ? state.inventory.find((item) => item.id === selected.id) : null;
     if (ui.priceTray) {
-      const showPrice = Boolean(plant && state.phase !== "supply" && state.phase !== "report");
+      const showPrice = Boolean(plant && !plant.benchStatus && state.phase !== "supply" && state.phase !== "report");
       ui.priceTray.hidden = !showPrice;
       if (ui.priceAmount && plant) ui.priceAmount.textContent = `${plantAskingPrice(plant)} coins`;
       ui.priceButtons.forEach((button) => {
@@ -2414,7 +3195,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
     if (ui.careTray) {
-      const showCare = Boolean(plant && state.phase !== "supply" && state.phase !== "report");
+      const showCare = Boolean(plant && !plant.benchStatus && state.phase !== "supply" && state.phase !== "report");
       ui.careTray.hidden = !showCare;
       ui.careTray.classList.toggle("is-visible", showCare);
     }
@@ -2603,6 +3384,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (event.key === "Escape") {
       if (modal === ui.upgradeModal) openModal(ui.upgradeModal, false);
+      if (modal === ui.benchModal) openModal(ui.benchModal, false);
       if (modal === ui.helpModal) openModal(ui.helpModal, false);
       return;
     }
@@ -2740,8 +3522,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (active) {
       const barrelMultiplier = state.upgrades.rainBarrel ? 0.65 : 1;
       state.inventory.forEach((plant) => {
+        if (plant.benchStatus) return;
         const before = plant.hydration;
-        plant.hydration = clamp(plant.hydration - speciesOf(plant).dryRate * barrelMultiplier * dt, 8, 100);
+        const protectionMultiplier = isConditionProtected(plant, state.day) ? 0.25 : 1;
+        plant.hydration = clamp(plant.hydration - speciesOf(plant).dryRate * barrelMultiplier * protectionMultiplier * dt, 8, 100);
         if (plant.hydration !== before) run.conditionDirty = true;
         if (plant.hydration <= 34 && !plant.thirstWarned) {
           plant.thirstWarned = true;

@@ -83,6 +83,20 @@
         <p class="panel-kicker">Today in the shop</p>
         <h2 id="task-title">Open the delivery</h2>
         <p id="task-copy">Open the paper-wrapped carton to meet today’s plants.</p>
+        <dl id="trade-profile" class="trade-profile" aria-label="Today’s market conditions">
+          <div>
+            <dt>Demand</dt>
+            <dd id="trade-demand">3 visitors</dd>
+          </div>
+          <div>
+            <dt>Daily cost</dt>
+            <dd id="trade-cost">0 coins</dd>
+          </div>
+          <div>
+            <dt>In stock</dt>
+            <dd id="trade-stock">0 plants</dd>
+          </div>
+        </dl>
         <p id="week-objective" class="week-objective"><span>Week goal</span><strong>0/3 lovely matches</strong></p>
         <button id="open-shop-button" class="button button-primary task-button" type="button" hidden>
           <span>Open the shop</span>
@@ -152,6 +166,19 @@
         >
           ▦
         </button>
+        <button
+          id="bench-button"
+          class="round-button"
+          type="button"
+          hidden
+          aria-controls="bench-modal"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+          aria-label="Open the care bench"
+          title="Care bench"
+        >
+          ⚘
+        </button>
         <button id="upgrade-button" class="round-button" type="button" aria-label="Shop upgrades">＋</button>
         <button id="sound-button" class="round-button" type="button" aria-label="Toggle sound">♫</button>
         <button id="help-button" class="round-button" type="button" aria-label="How to play">?</button>
@@ -202,13 +229,50 @@
         <p class="panel-kicker">Greenhouse handbook</p>
         <h2 id="help-title">How to keep things mostly alive</h2>
         <div class="help-grid">
-          <div><strong>1</strong><p>Read the morning forecast and choose a nursery lot you can afford.</p></div>
-          <div><strong>2</strong><p>Open its cartons, then water, mist, or prune plants that need attention.</p></div>
-          <div><strong>3</strong><p>Arrange the prepared plants on your displays, then open the shop when you are ready.</p></div>
-          <div><strong>4</strong><p>Read Must have, Would love, and Budget; retag a plant when the price is not right.</p></div>
+          <div><strong>1</strong><p>Visitor demand changes each day. Check the market strip before you buy stock.</p></div>
+          <div><strong>2</strong><p>Unsold plants stay in the shop. Keep a useful range, but plan for daily costs. From Week 4, stock above the target uses 2 extra coins per plant at closing.</p></div>
+          <div><strong>3</strong><p>Read Must have, Would love, and Budget. Care, arrange, or retag a plant to improve the match.</p></div>
+          <div><strong>4</strong><p>Use the Care bench to repot, restore, or propagate plants. Each job uses time and materials.</p></div>
         </div>
         <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
+      </div>
+    </section>
+
+    <section id="bench-modal" class="modal-layer bench-layer" hidden aria-labelledby="bench-title">
+      <div
+        class="modal-card bench-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bench-title"
+        aria-describedby="bench-summary bench-status"
+        tabindex="-1"
+      >
+        <button id="close-bench" class="modal-close" type="button" aria-label="Close the care bench">×</button>
+        <p class="panel-kicker">Potting room</p>
+        <h2 id="bench-title">Care bench</h2>
+        <p id="bench-summary" class="bench-summary">
+          Give one plant focused care. A good bench job can improve its health, value, or future stock.
+        </p>
+        <p id="bench-status" class="bench-status" role="status" aria-live="polite">
+          Choose a plant, then choose one available job.
+        </p>
+        <div class="bench-workspace">
+          <section class="bench-section" aria-labelledby="bench-plants-title">
+            <div class="bench-section-heading">
+              <h3 id="bench-plants-title">Choose a plant</h3>
+              <span>Shop stock</span>
+            </div>
+            <div id="bench-plants" class="bench-plants" aria-label="Plants available at the care bench"></div>
+          </section>
+          <section class="bench-section" aria-labelledby="bench-actions-title">
+            <div class="bench-section-heading">
+              <h3 id="bench-actions-title">Choose a job</h3>
+              <span>Timed jobs</span>
+            </div>
+            <div id="bench-actions" class="bench-actions" role="group" aria-label="Care bench jobs"></div>
+          </section>
+        </div>
       </div>
     </section>
 
@@ -217,8 +281,15 @@
         <button id="close-upgrades" class="modal-close" type="button" aria-label="Close upgrades">×</button>
         <p class="panel-kicker">Visible improvements</p>
         <h2 id="upgrade-title">Make the shop your own</h2>
-        <p class="modal-intro">Every upgrade changes the room. Coins are useful; charm is essential.</p>
+        <p class="modal-intro">Fixtures give the shop new functions. From Week 3, fund one repeatable shop project each week.</p>
         <div id="upgrade-options" class="upgrade-grid"></div>
+        <section id="project-panel" class="project-panel" aria-labelledby="project-title">
+          <p class="panel-kicker">This week’s shop project</p>
+          <h3 id="project-title">A neighborhood improvement</h3>
+          <p id="project-copy">Projects unlock in Week 3.</p>
+          <p id="project-progress" class="project-progress">0 projects funded</p>
+          <button id="project-fund" class="button button-primary" type="button" disabled>Locked until Week 3</button>
+        </section>
       </div>
     </section>
 
@@ -232,11 +303,11 @@
 
           <dl class="report-stats" aria-label="Today’s shop results">
             <div class="report-stat report-stat-profit">
-              <dt>Gross profit</dt>
+              <dt>Net profit</dt>
               <dd id="report-profit">+18 coins</dd>
             </div>
             <div class="report-stat report-stat-bloom">
-              <dt>Bloom earned</dt>
+              <dt>Bloom change</dt>
               <dd id="report-bloom">+6</dd>
             </div>
             <div class="report-stat report-stat-stock">
