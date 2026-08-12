@@ -1306,6 +1306,7 @@ h1 span {
 }
 
 .bench-plants,
+.bench-active-jobs,
 .bench-actions {
   display: grid;
   gap: 0.55rem;
@@ -1322,6 +1323,25 @@ h1 span {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   position: sticky;
   top: 0;
+}
+
+.bench-active-jobs {
+  grid-template-columns: 1fr;
+}
+
+.bench-subheading {
+  margin: 0.18rem 0 0;
+  color: rgba(32, 58, 44, 0.66);
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bench-active-jobs .bench-job {
+  min-height: 5.4rem;
+  cursor: default;
+  background: rgba(212, 232, 219, 0.7);
 }
 
 .bench-plant,

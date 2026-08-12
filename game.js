@@ -38,6 +38,7 @@ import {
   isConditionProtected,
   migrateBenchState,
   reconcileBenchInventory,
+  REHABILITATE_VALUE_RESTORE,
   startBenchJob,
   validateBenchJob,
 } from "./care-bench-system.js";
@@ -79,12 +80,14 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
   const species = SPECIES.find((item) => item.name === speciesName) || SPECIES[0];
   const rng = seeded(Math.floor(seed));
   const colorShift = rng() * 0.12 - 0.06;
+  const needsRehabilitation = Boolean(options.needsRehabilitation);
+  const rehabilitationValueLoss = needsRehabilitation ? REHABILITATE_VALUE_RESTORE : 0;
   return {
     id: `plant-${Date.now().toString(36)}-${Math.floor(rng() * 1e7).toString(36)}`,
     speciesId: species.id,
     species: species.name,
     traits: [...species.traits],
-    price: species.price + Math.floor(rng() * 4),
+    price: Math.max(1, species.price + Math.floor(rng() * 4) - rehabilitationValueLoss),
     wholesaleCost: species.wholesaleCost,
     acquisitionCost: Number.isFinite(options.acquisitionCost) ? options.acquisitionCost : species.wholesaleCost,
     colorShift,
@@ -106,7 +109,8 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
     cosmeticVariation: { hueShift: colorShift },
     recoveredToday: false,
     thirstWarned: false,
-    needsRehabilitation: Boolean(options.needsRehabilitation),
+    needsRehabilitation,
+    rehabilitationValueLoss,
     arrivalDay: Number.isFinite(options.arrivalDay) ? Math.max(1, Math.floor(options.arrivalDay)) : 1,
     slot: null,
   };
@@ -240,6 +244,7 @@ function loadState() {
         rootAgeDays: Math.max(0, Math.floor(Number(plant.rootAgeDays) || 0)),
         arrivalDay: Math.max(1, Math.floor(Number(plant.arrivalDay) || Number(value.day) || 1)),
         needsRehabilitation: Boolean(plant.needsRehabilitation),
+        rehabilitationValueLoss: Math.max(0, Math.floor(Number(plant.rehabilitationValueLoss) || 0)),
         recoveredToday: Boolean(plant.recoveredToday),
         thirstWarned: Boolean(plant.thirstWarned),
         care: { water: false, mist: false, prune: false, ...(plant.care || {}) },
@@ -453,6 +458,7 @@ document.addEventListener("DOMContentLoaded", () => {
     benchSummary: $("bench-summary"),
     benchStatus: $("bench-status"),
     benchPlants: $("bench-plants"),
+    benchActiveJobs: $("bench-active-jobs"),
     benchActions: $("bench-actions"),
     closeBench: $("close-bench"),
     supplierBoard: $("supplier-board"),
@@ -500,6 +506,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const slotObjects = new Map();
   const effects = [];
   const movers = [];
+  const exteriorAmbient = [];
+  let exteriorDioramaRoot = null;
   const pointers = new Map();
   const staging = [
     new THREE.Vector3(3.15, 1.12, -2.45),
@@ -796,6 +804,95 @@ document.addEventListener("DOMContentLoaded", () => {
     return root;
   }
 
+  function makeExteriorStreet() {
+    const grassMat = material(0xaebf98, { roughness: 1 });
+    const roadMat = material(0x6f7771, { roughness: 0.96 });
+    const sidewalkMat = material(0xd8cfb4, { roughness: 0.9 });
+    const curbMat = material(0xeee4c9, { roughness: 0.88 });
+    const lineMat = material(0xe6c86e, { roughness: 0.9 });
+    const planterMat = material(0xae6e52, { roughness: 0.92 });
+    const trunkMat = material(0x7f6548, { roughness: 1 });
+    const leafMat = material(0x66825e, { roughness: 0.96 });
+    const flowerMats = [material(0xd99276), material(0xe5c96f), material(0xa88db2)];
+
+    const exterior = new THREE.Group();
+    exterior.name = "neighborhood-exterior";
+
+    const ground = box(exterior, [24, 0.06, 24], [0, -0.13, 2.8], grassMat);
+    ground.castShadow = false;
+
+    const road = box(exterior, [24, 0.08, 4.7], [1, -0.12, 9.85], roadMat);
+    const sidewalk = box(exterior, [18, 0.09, 2.35], [0, -0.015, 6.15], sidewalkMat);
+    const curb = box(exterior, [18, 0.16, 0.18], [0, 0.04, 7.38], curbMat);
+    const sideRoad = box(exterior, [5, 0.08, 12.5], [11.1, -0.12, 1.15], roadMat);
+    const sideWalk = box(exterior, [2.5, 0.09, 8.4], [7.25, -0.015, -0.82], sidewalkMat);
+    const entryPaving = box(exterior, [2.5, 0.09, 1.7], [7.25, -0.015, 4.2], sidewalkMat);
+    const sideCurb = box(exterior, [0.18, 0.16, 8.4], [8.56, 0.04, -0.82], curbMat);
+    [road, sidewalk, curb, sideRoad, sideWalk, entryPaving, sideCurb].forEach((object) => { object.castShadow = false; });
+    [-7, -3.5, 0, 3.5, 7].forEach((x) => {
+      const mark = box(exterior, [1.6, 0.018, 0.12], [x, -0.07, 9.85], lineMat);
+      mark.castShadow = false;
+    });
+
+    const crosswalkX = 5.6;
+    for (let stripe = 0; stripe < 5; stripe += 1) {
+      const mark = box(exterior, [0.2, 0.02, 1.15], [crosswalkX - 0.62 + stripe * 0.31, -0.065, 8.25], curbMat);
+      mark.castShadow = false;
+    }
+    [-3, 0.5, 4].forEach((z) => {
+      const mark = box(exterior, [0.12, 0.018, 1.5], [11.05, -0.07, z], lineMat);
+      mark.castShadow = false;
+    });
+
+    const makePlanter = (x, z, phase, scale = 1) => {
+      const root = new THREE.Group();
+      root.position.set(x, 0.08, z);
+      cylinder(root, 0.48 * scale, 0.4 * scale, 0.42 * scale, [0, 0.22 * scale, 0], planterMat, 10).castShadow = false;
+      const stems = new THREE.Group();
+      for (let index = 0; index < 5; index += 1) {
+        const angle = (index / 5) * Math.PI * 2;
+        const stem = cylinder(stems, 0.025, 0.035, 0.75 * scale, [Math.cos(angle) * 0.18 * scale, 0.7 * scale, Math.sin(angle) * 0.18 * scale], trunkMat, 5);
+        stem.rotation.z = (index - 2) * 0.08;
+        stem.castShadow = false;
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(0.29 * scale, 7, 5), leafMat);
+        crown.position.set(Math.cos(angle) * 0.28 * scale, (1.08 + (index % 2) * 0.13) * scale, Math.sin(angle) * 0.28 * scale);
+        crown.scale.set(1.15, 0.74, 0.86);
+        stems.add(crown);
+        const flower = new THREE.Mesh(new THREE.SphereGeometry(0.08 * scale, 6, 4), flowerMats[index % flowerMats.length]);
+        flower.position.copy(crown.position).add(new THREE.Vector3(0, 0.18 * scale, -0.02));
+        stems.add(flower);
+      }
+      root.add(stems);
+      exterior.add(root);
+      exteriorAmbient.push({ root: stems, baseZ: stems.rotation.z, phase, speed: 0.62 + phase * 0.03, amplitude: 0.022 });
+    };
+
+    const makeTree = (x, z, phase) => {
+      const root = new THREE.Group();
+      root.position.set(x, 0.05, z);
+      cylinder(root, 0.13, 0.2, 2.55, [0, 1.28, 0], trunkMat, 8).castShadow = false;
+      const crown = new THREE.Group();
+      crown.position.y = 2.45;
+      [[0, 0.55, 0, 0.82], [-0.5, 0.12, 0.05, 0.65], [0.5, 0.16, -0.08, 0.68], [0, 0, 0.42, 0.58]].forEach(([cx, cy, cz, radius], index) => {
+        const foliage = new THREE.Mesh(new THREE.SphereGeometry(radius, 7, 5), index % 2 ? leafMat : material(0x78966d, { roughness: 0.96 }));
+        foliage.position.set(cx, cy, cz);
+        foliage.scale.set(1.05, 0.9, 0.95);
+        foliage.castShadow = false;
+        crown.add(foliage);
+      });
+      root.add(crown);
+      exterior.add(root);
+      exteriorAmbient.push({ root: crown, baseZ: crown.rotation.z, phase, speed: 0.48, amplitude: 0.017 });
+    };
+
+    makePlanter(-4.5, 7.05, 0.7, 0.92);
+    makePlanter(2.8, 7.08, 2.4, 0.86);
+    makeTree(8.2, -4.6, 1.6);
+
+    exteriorDioramaRoot = exterior;
+    world.add(exterior);
+  }
+
   function buildShop(textures) {
     const floorMat = material(0xb97758, { map: textures.floor });
     const wallMat = material(0xe7dfc5, { map: textures.wall });
@@ -814,6 +911,7 @@ document.addEventListener("DOMContentLoaded", () => {
     box(world, [0.18, 5.8, 10], [-6.02, 2.9, -0.05], wallMat);
     box(world, [12.25, 0.22, 0.35], [0, 0.08, -5.02], darkWood);
     box(world, [0.35, 0.22, 10], [-5.98, 0.08, -0.05], darkWood);
+    makeExteriorStreet();
 
     const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 3.1), material(0xc67d68));
     rug.rotation.x = -Math.PI / 2;
@@ -1278,8 +1376,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function conditionOf(plant) {
     const fit = lightFit(plant);
+    if (plant.needsRehabilitation) return { label: "nursery-stressed", icon: "○" };
     if (plant.hydration < 42) return { label: "drooping", icon: "○" };
-    if (plant.needsRehabilitation) return { label: "stressed", icon: "○" };
     if (plant.lifeStage === "juvenile") return { label: "growing", icon: "◔" };
     if (plant.rootComfort !== "comfortable") return { label: "root-bound", icon: "◑" };
     if (fit.level === "poor") return { label: "light-stressed", icon: "◐" };
@@ -1646,7 +1744,7 @@ document.addEventListener("DOMContentLoaded", () => {
       badges.className = "supplier-badges";
       const condition = document.createElement("span");
       condition.className = "supplier-badge";
-      condition.textContent = lot.condition === "stressed" ? "Needs care" : lot.speciesNames?.length ? "Healthy stock" : "Current stock";
+      condition.textContent = lot.condition === "stressed" ? "Needs Rehabilitate" : lot.speciesNames?.length ? "Healthy stock" : "Current stock";
       const capacity = document.createElement("span");
       capacity.className = "supplier-badge";
       capacity.textContent = fits ? `${lot.speciesNames?.length || 0} spaces used` : "Not enough space";
@@ -1828,7 +1926,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     [BENCH_JOB_TYPES.REHABILITATE]: {
       name: "Rehabilitate",
-      copy: "Restore a stressed plant and protect it for two days.",
+      copy: "Clear nursery stress, restore lost sale value, and protect the plant for two days.",
     },
     [BENCH_JOB_TYPES.PROPAGATE]: {
       name: "Propagate",
@@ -1839,8 +1937,19 @@ document.addEventListener("DOMContentLoaded", () => {
   function benchJobCopy(type) {
     if (!state.upgrades.growLamp) return benchJobInfo[type].copy;
     if (type === BENCH_JOB_TYPES.REPOT) return "Fresh soil, comfortable roots, and +6 base value with lamp support.";
-    if (type === BENCH_JOB_TYPES.REHABILITATE) return "Restore a stressed plant and protect it for three days with lamp support.";
+    if (type === BENCH_JOB_TYPES.REHABILITATE) return "Clear nursery stress, restore lost sale value, and protect the plant for three days with lamp support.";
     return "Create one juvenile cutting. Lamp support helps it mature in two mornings.";
+  }
+
+  function activeBenchJobCopy(job, plant) {
+    if (job.type === BENCH_JOB_TYPES.REPOT) {
+      return `Comfortable roots · +${job.lampAssisted ? 6 : 4} base value.`;
+    }
+    if (job.type === BENCH_JOB_TYPES.REHABILITATE) {
+      const restore = Math.max(0, Number(plant?.rehabilitationValueLoss) || 0);
+      return `Clears nursery stress${restore ? ` · restores ${restore} coins` : ""} · ${job.lampAssisted ? 3 : 2} protected days.`;
+    }
+    return `Creates a juvenile cutting · ${job.lampAssisted ? 2 : 3} mornings to mature.`;
   }
 
   function benchValidation(type, plant) {
@@ -1897,7 +2006,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderBench() {
-    if (!ui.benchPlants || !ui.benchActions) return;
+    if (!ui.benchPlants || !ui.benchActiveJobs || !ui.benchActions) return;
     state.benchState = {
       ...migrateBenchState(state.benchState),
       slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
@@ -1961,7 +2070,14 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.benchPlants.append(button);
     });
 
+    ui.benchActiveJobs.replaceChildren();
     ui.benchActions.replaceChildren();
+    if (!jobs.length) {
+      const empty = document.createElement("p");
+      empty.className = "bench-empty";
+      empty.textContent = `No work in progress. ${state.benchState.slotCount} bench ${state.benchState.slotCount === 1 ? "slot is" : "slots are"} free.`;
+      ui.benchActiveJobs.append(empty);
+    }
     jobs.forEach((job) => {
       const card = document.createElement("article");
       card.className = "bench-job";
@@ -1971,9 +2087,10 @@ document.addEventListener("DOMContentLoaded", () => {
       name.textContent = `${benchJobInfo[job.type]?.name || "Bench job"} · ${plant?.species || "Plant"}`;
       const detail = document.createElement("small");
       const lampCopy = job.lampAssisted ? " Grow lamp assisted." : "";
-      detail.textContent = job.status === "ready" ? `Ready. Waiting for stock space.${lampCopy}` : `Finishes on Day ${job.readyDay}.${lampCopy}`;
+      const timingCopy = job.status === "ready" ? "Ready. Waiting for stock space." : `Finishes on Day ${job.readyDay}.`;
+      detail.textContent = `${timingCopy} ${activeBenchJobCopy(job, plant)}${lampCopy}`;
       card.append(name, detail);
-      ui.benchActions.append(card);
+      ui.benchActiveJobs.append(card);
     });
     Object.values(BENCH_JOB_TYPES).forEach((type) => {
       const info = benchJobInfo[type];
@@ -2981,7 +3098,10 @@ document.addEventListener("DOMContentLoaded", () => {
         ? `One tiny haircut. Considerable confidence. +1 Bloom.`
         : `${plant.species} would rather keep that growth. No care bonus.`,
     };
-    toast(`${messages[type]}${weeklyRewardCopy}`, weeklyRewardCopy ? 5200 : 3100);
+    const stressCopy = plant.needsRehabilitation
+      ? ` Its normal care is complete, but nursery stress remains. Rehabilitate it to restore ${plant.rehabilitationValueLoss || 0} coins of sale value.`
+      : "";
+    toast(`${messages[type]}${stressCopy}${weeklyRewardCopy}`, weeklyRewardCopy || stressCopy ? 5200 : 3100);
     updateUi();
   }
 
@@ -3021,7 +3141,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const thriving = condition.label === "thriving";
     const idealLight = lightFit(plant).level === "ideal";
     const extras = [wishMet, Boolean(careWishMet), thriving].filter(Boolean).length;
-    if (["drooping", "stressed", "root-bound", "light-stressed"].includes(condition.label) && band !== "quick") {
+    if (["drooping", "nursery-stressed", "root-bound", "light-stressed"].includes(condition.label) && band !== "quick") {
       sound("error");
       toast(`${person.name} notices that ${plant.species} is ${condition.label}. Improve its condition or use a Quick tag.`);
       return;
@@ -3595,7 +3715,8 @@ document.addEventListener("DOMContentLoaded", () => {
           : "";
         title = plant.species;
         const growth = plant.lifeStage === "juvenile" ? ` · juvenile, ${plant.maturityDaysRemaining} mornings to mature` : "";
-        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        const rehabCopy = plant.rehabilitationValueLoss ? ` · Rehabilitate restores ${plant.rehabilitationValueLoss} coins` : "";
+        copy = `${plant.traits.join(" · ")}${specialCopy} · ${condition.icon} ${condition.label}${growth}${rehabCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -3626,7 +3747,7 @@ document.addEventListener("DOMContentLoaded", () => {
         title = "Care Bench";
         copy = jobs
           ? `${jobs} active ${jobs === 1 ? "job is" : "jobs are"} using the bench. Open it to check the work or plan the next job.`
-          : "Repot root-bound stock, rehabilitate stressed plants, or propagate a thriving plant during morning preparation.";
+          : "Repot cramped roots, clear nursery stress and restore rescue value, or propagate a thriving plant during morning preparation.";
         action = "Open Care Bench";
         disabled = false;
       } else if (selected.id === "watering-can") {
@@ -3826,7 +3947,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const height = Math.max(canvas.clientHeight, 1);
     const aspect = width / height;
     const portraitBoost = aspect < 0.75 ? 1.14 : 1;
-    const viewHeight = 13.2 * portraitBoost / run.zoom;
+    const desktopDiorama = width >= 1024 && height >= 600;
+    if (exteriorDioramaRoot) exteriorDioramaRoot.visible = desktopDiorama;
+    const viewHeight = (desktopDiorama ? 15.4 : 13.2) * portraitBoost / run.zoom;
     camera.left = (-viewHeight * aspect) / 2;
     camera.right = (viewHeight * aspect) / 2;
     camera.top = viewHeight / 2;
@@ -3986,6 +4109,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateWateringCan(dt);
     updateEffects(dt);
     updateGrowLamp(time);
+    updateExteriorAmbient(time);
     updateCustomer(dt, time);
     updateMoth(dt);
     updateSelectionRing();
@@ -4002,6 +4126,16 @@ document.addEventListener("DOMContentLoaded", () => {
       lamp.userData.glow.material.emissiveIntensity = active ? 2.2 + pulse * 1.5 : 1.25;
       lamp.userData.glow.scale.setScalar(active ? 1 + pulse * 0.16 : 1);
     }
+  }
+
+  function updateExteriorAmbient(time) {
+    if (!exteriorDioramaRoot?.visible || reduceMotion || document.hidden) return;
+    const breeze = Math.sin(time * 0.33) * 0.65 + Math.sin(time * 0.11) * 0.35;
+    exteriorAmbient.forEach((item) => {
+      item.root.rotation.z = item.baseZ
+        + breeze * item.amplitude
+        + Math.sin(time * item.speed + item.phase) * item.amplitude * 0.35;
+    });
   }
 
   function updatePlantCondition(dt) {

@@ -195,3 +195,14 @@
 - Added a visible lamp bulb and pulse for active assisted jobs. The lamp is now selectable and opens the Care Bench. Upgrade, task-panel, job-card, help, README, and gameplay-plan text state the real effects.
 - Raised the care-bench substate to version 2. Old jobs migrate with lamp support off. Lamp support remains correct after save and reload.
 - Validation passed every existing `*.qa.mjs` suite, JavaScript syntax checks, and whitespace checks. Browser tests covered Q selection, the physical Care Bench dialog and focus path, a thirsty watering-can action from 57% to 100% soil hydration, visible grow-lamp purchase and guidance, and the shelf/Community Board room layout.
+
+## 2026-08-12 — Neighborhood street and clearer rehabilitation
+
+- Added a procedural exterior around the shop diorama. A muted grass base now supports an L-shaped pavement, two connected streets, curbs, dashed road marks, and a small crosswalk. The customer route remains clear.
+- Added two public planters and one low-poly street tree. Their stems and foliage move with a slow layered breeze. The animation changes only three group rotations per frame and stops fully when reduced motion is active or the page is hidden.
+- Widened the desktop orthographic view so the street is visible without hiding the shop. The original framing remains for viewports below the desktop threshold. Exterior objects stay decorative and do not enter pointer or keyboard selection.
+- Split the Care Bench’s right column into `Work in progress` and `Start a new job`. Active work uses quiet non-interactive cards. Only Repot, Rehabilitate, and Propagate remain in the action group.
+- Gave Rehabilitate one distinct job. Mystery Rescue plants now arrive with `nursery-stressed` condition and four coins of lost base value. Water fixes thirst, display movement fixes light, Repot fixes roots, and only Rehabilitate clears nursery stress and restores the lost value.
+- Kept Quick sale as the immediate low-price option for nursery-stressed stock. Fair and Boutique sales require rehabilitation. The selected-plant text, nursery card, help, job copy, completion message, README, and gameplay plan explain the choice.
+- Save migration gives existing plants a zero value-loss default, so older stressed stock does not receive an incorrect price gain. New rescue stock saves its exact recoverable loss. Reload and repeated-completion tests confirm that value is restored once.
+- All six `*.qa.mjs` suites, JavaScript syntax checks, and whitespace checks passed. Browser checks covered the 1280×720 default and rotated street views, tree and planter clearance, the full Care Bench dialog, and clear active-work versus new-job grouping.

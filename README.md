@@ -23,7 +23,7 @@ Then visit `http://127.0.0.1:4173/`.
 2. Choose a Reliable Tray, Curated Pair, discounted Mystery Rescue Lot, or—when the shop is already prepared—use current stock. Normal shipments grow with demand and can contain up to seven plants. A Rare Nursery sellout collection can contain eight, with one specialist specimen and seven request matches. Supplier choices top up missing must-have traits while preserving useful carry-over stock.
 3. Pay the nursery invoice, open the animated cartons, and watch each distinct plant move onto the preparation bench.
 4. Read soil and species preferences. Thirsty plants visibly droop, watering and misting have distinct effects, and only useful care earns Bloom.
-5. Use the physical Care Bench during preparation. Select it in the 3D room to open Repot, Rehabilitate, and Propagate jobs. The main task-panel card also shows timing and active jobs. Plants with active jobs now sit at the bench.
+5. Use the physical Care Bench during preparation. Select it in the 3D room to open Repot, Rehabilitate, and Propagate jobs. Active work has its own list, separate from new job choices. Water fixes thirst, arrangement fixes light, Repot fixes roots, and Rehabilitate clears nursery stress and restores the rescue plant’s lost sale value.
 6. Arrange or swap stock across shade, indirect, and sunny displays, then give every plant a visible Quick, Fair, or Boutique price tag. Colored rings show light fit while a separate pulse marks the daily display vignette.
 7. Manually open the shop, then read each neighbor’s **Must have**, **Would love**, and **Budget**. A sale depends on the required trait, plant condition, root comfort, and asking price. Optional preferences reward a more thoughtful match.
 8. Balance stock range against daily costs. Unsold plants stay in the shop, use capacity, and slowly become root-bound. The Delivery Rack raises capacity from 12 to 16 plants. Display Shelves extend the original display along the Community Board wall, add four real display spots, and raise the combined maximum to 20.
@@ -32,6 +32,8 @@ Then visit `http://127.0.0.1:4173/`.
 11. Build relationships with 12 recurring neighbors, advance the weekly objective, and review a fuller shop-week recap after Friday.
 
 The watering can is a working 3D tool. Select a plant, then select the can and act. Its pour animation uses the same watering rules as the Water control. The grow lamp also has a real Care Bench effect. It adds 2 more coins of Repot value, adds one Rehabilitate protection day, and reduces propagated-plant growth from three mornings to two.
+
+The shop sits inside a small neighborhood diorama. The desktop view includes a pavement, curb, road markings, public planters, a street tree, and gentle greenery movement. Reduced-motion mode keeps the exterior still.
 
 The current week and weekday, weekly objective, customer memory, unsold inventory, living plant condition, root comfort, bench jobs, juveniles, price tags, shop projects, finances, sound preference, and upgrades are stored locally in the browser.
 

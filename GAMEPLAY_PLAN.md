@@ -85,6 +85,7 @@ Rules:
 - Misting and pruning are valuable only for relevant species, not universal chores.
 - Overwatering remains blocked instead of becoming a hidden punishment.
 - The grow lamp improves new Care Bench jobs. It adds Repot value, extends Rehabilitate protection, and speeds juvenile growth after Propagate. Misting stays a separate, visible care action.
+- Nursery-stressed rescue stock has a visible four-coin value loss. Water, mist, and prune do not remove that travel stress. Rehabilitate clears it, restores the lost value, and protects the plant for later shop days.
 
 ### 3. Pricing and merchandising
 

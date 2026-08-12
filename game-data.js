@@ -1037,7 +1037,7 @@ export const SUPPLIER_TYPES = [
   {
     id: "mystery-rescue-lot",
     name: "Mystery Rescue Lot",
-    description: "Three discounted mystery plants that arrive stressed but can recover with thoughtful care.",
+    description: "Three discounted mystery plants with nursery stress and reduced sale value. Rehabilitate restores their full value.",
     quantity: { min: 3, max: 3 },
     pricing: {
       basis: "sum-wholesale-cost",

@@ -8,6 +8,7 @@ import {
   GROW_LAMP_REPOT_VALUE_BONUS,
   PROPAGATION_MATURITY_DAYS,
   REHABILITATE_PROTECTION_DAYS,
+  REHABILITATE_VALUE_RESTORE,
   REPOT_VALUE_BONUS,
   advanceAndApplyBenchJobs,
   createDefaultBenchState,
@@ -89,7 +90,27 @@ const legacyBench = migrateBenchState({
 assert.equal(legacyBench.version, CARE_BENCH_STATE_VERSION);
 assert.equal(legacyBench.jobs[0].lampAssisted, false);
 
-inventory = [plant("rescue", { hydration: 33, needsRehabilitation: true, slot: null })];
+const thirstyNormal = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "thirsty-normal",
+  inventory: [plant("thirsty-normal", { hydration: 30, needsRehabilitation: false, slot: null })],
+  benchState: createDefaultBenchState(),
+  coins: 20,
+  bloom: 0,
+  day: 4,
+  capacity: 12,
+  condition: "drooping",
+});
+assert.equal(thirstyNormal.ok, false);
+assert.equal(thirstyNormal.code, "rehabilitation-not-needed");
+
+inventory = [plant("rescue", {
+  hydration: 100,
+  needsRehabilitation: true,
+  rehabilitationValueLoss: REHABILITATE_VALUE_RESTORE,
+  price: fern.price - REHABILITATE_VALUE_RESTORE,
+  slot: null,
+})];
 const rehab = startBenchJob({
   type: BENCH_JOB_TYPES.REHABILITATE,
   plantId: "rescue",
@@ -102,16 +123,48 @@ const rehab = startBenchJob({
   condition: "stressed",
 });
 assert.equal(rehab.ok, true);
+const savedRehab = JSON.parse(JSON.stringify({ benchState: rehab.benchState, inventory: rehab.inventory }));
 const rehabDone = advanceAndApplyBenchJobs({
-  benchState: rehab.benchState,
-  inventory: rehab.inventory,
+  benchState: savedRehab.benchState,
+  inventory: savedRehab.inventory,
   day: 5,
   capacity: 12,
 });
 assert.equal(rehabDone.inventory[0].needsRehabilitation, false);
-assert.equal(rehabDone.inventory[0].hydration, 88);
+assert.equal(rehabDone.inventory[0].hydration, 100);
 assert.equal(rehabDone.inventory[0].conditionProtectionUntilDay, 6);
 assert.equal(rehabDone.inventory[0].acquisitionCost, fern.wholesaleCost + 8);
+assert.equal(rehabDone.inventory[0].price, fern.price);
+assert.equal(rehabDone.inventory[0].rehabilitationValueLoss, 0);
+assert.equal(rehabDone.appliedJobs[0].restoredValue, REHABILITATE_VALUE_RESTORE);
+const rehabAppliedAgain = advanceAndApplyBenchJobs({
+  benchState: rehabDone.benchState,
+  inventory: rehabDone.inventory,
+  day: 6,
+  capacity: 12,
+});
+assert.equal(rehabAppliedAgain.inventory[0].price, fern.price);
+assert.equal(rehabAppliedAgain.appliedJobs.length, 0);
+
+const legacyValueRehab = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "legacy-value-rescue",
+  inventory: [plant("legacy-value-rescue", { hydration: 100, needsRehabilitation: true, slot: null })],
+  benchState: createDefaultBenchState(),
+  coins: 20,
+  bloom: 0,
+  day: 7,
+  capacity: 12,
+  condition: "nursery-stressed",
+});
+const legacyValueDone = advanceAndApplyBenchJobs({
+  benchState: legacyValueRehab.benchState,
+  inventory: legacyValueRehab.inventory,
+  day: 8,
+  capacity: 12,
+});
+assert.equal(legacyValueDone.inventory[0].price, fern.price);
+assert.equal(legacyValueDone.appliedJobs[0].restoredValue, 0);
 
 inventory = [plant("parent", { hydration: 92 })];
 const propagation = startBenchJob({
@@ -172,7 +225,13 @@ assert.match(assistedRepotDone.message, /grow lamp added 2 more coins/i);
 const assistedRehab = startBenchJob({
   type: BENCH_JOB_TYPES.REHABILITATE,
   plantId: "lamp-rehab",
-  inventory: [plant("lamp-rehab", { hydration: 33, needsRehabilitation: true, slot: null })],
+  inventory: [plant("lamp-rehab", {
+    hydration: 100,
+    needsRehabilitation: true,
+    rehabilitationValueLoss: REHABILITATE_VALUE_RESTORE,
+    price: fern.price - REHABILITATE_VALUE_RESTORE,
+    slot: null,
+  })],
   benchState: createDefaultBenchState(),
   coins: 20,
   bloom: 0,
@@ -192,6 +251,8 @@ assert.equal(
   31 + REHABILITATE_PROTECTION_DAYS + GROW_LAMP_REHABILITATE_PROTECTION_DAYS - 1,
 );
 assert.match(assistedRehabDone.message, /grow lamp added one protection day/i);
+assert.equal(assistedRehabDone.inventory[0].price, fern.price);
+assert.equal(assistedRehabDone.inventory[0].rehabilitationValueLoss, 0);
 
 const assistedPropagation = startBenchJob({
   type: BENCH_JOB_TYPES.PROPAGATE,

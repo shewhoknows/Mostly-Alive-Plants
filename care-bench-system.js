@@ -24,6 +24,7 @@ export const BENCH_JOB_DURATIONS = Object.freeze({
 export const REPOT_VALUE_BONUS = 4;
 export const REHABILITATE_HYDRATION = 88;
 export const REHABILITATE_PROTECTION_DAYS = 2;
+export const REHABILITATE_VALUE_RESTORE = 4;
 export const PROPAGATION_PRICE_MULTIPLIER = 0.65;
 export const PROPAGATION_MATURITY_DAYS = 3;
 export const GROW_LAMP_REPOT_VALUE_BONUS = 2;
@@ -296,13 +297,9 @@ export function validateBenchJob({
   }
 
   if (type === BENCH_JOB_TYPES.REHABILITATE) {
-    const hydration = Number(plant.hydration);
-    const stressed = Number.isFinite(hydration) && hydration < 55
-      || ["stressed", "drooping", "light-stressed", "recovering"].includes(plantCondition)
-      || plant.needsRehabilitation === true;
     const protectedUntilDay = safeInteger(plant.conditionProtectionUntilDay);
-    if (!stressed || protectedUntilDay >= safeDay(day)) {
-      return failure("rehabilitation-not-needed", "This plant does not need rehabilitation.", context);
+    if (plant.needsRehabilitation !== true || protectedUntilDay >= safeDay(day)) {
+      return failure("rehabilitation-not-needed", "Only nursery-stressed rescue stock needs Rehabilitate. Water thirsty plants or move light-stressed plants.", context);
     }
   }
 
@@ -586,20 +583,23 @@ export function applyCompletedBenchJobs({
 
     const protectionDays = REHABILITATE_PROTECTION_DAYS
       + (job.lampAssisted ? GROW_LAMP_REHABILITATE_PROTECTION_DAYS : 0);
+    const restoredValue = safeInteger(plant.rehabilitationValueLoss, 0);
     nextInventory[plantIndex] = {
       ...completedPlantBase(plant, currentDay),
       acquisitionCost: safeInteger(plant.acquisitionCost, 0) + safeInteger(job.cost?.coins, 0),
       hydration: Math.max(Number(plant.hydration) || 0, REHABILITATE_HYDRATION),
       condition: "healthy",
       needsRehabilitation: false,
+      price: safeInteger(plant.price, 1, 1) + restoredValue,
+      rehabilitationValueLoss: 0,
       recoveredToday: true,
       rehabilitatedDay: currentDay,
       conditionProtectionUntilDay: currentDay + protectionDays - 1,
     };
-    appliedJobs.push(job);
+    appliedJobs.push({ ...job, restoredValue });
     messages.push(job.lampAssisted
-      ? `${plant.species || "The plant"} is healthy and protected. The grow lamp added one protection day.`
-      : `${plant.species || "The plant"} is healthy and protected.`);
+      ? `${plant.species || "The plant"} has no nursery stress. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}. The grow lamp added one protection day.`
+      : `${plant.species || "The plant"} has no nursery stress. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}, with two protected days.`);
   });
 
   return {
