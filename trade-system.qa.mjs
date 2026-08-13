@@ -65,6 +65,17 @@ const serviceLimitedShop = dailyTradeProfile({ day: 15, visitorBonus: 1, service
 assert.equal(serviceLimitedShop.visitorCount, 4);
 assert.equal(serviceLimitedShop.serviceableCapacity, 4);
 
+const baseStockRange = dailyTradeProfile({ day: 20, inventoryCount: 0, capacity: 12 });
+const rackStockRange = dailyTradeProfile({ day: 20, inventoryCount: 0, capacity: 16 });
+const expandedStockRange = dailyTradeProfile({ day: 20, inventoryCount: 0, capacity: 20 });
+assert.equal(baseStockRange.choiceBuffer, 6);
+assert.equal(rackStockRange.choiceBuffer, 8);
+assert.equal(expandedStockRange.choiceBuffer, 10);
+assert.equal(baseStockRange.stockTarget - baseStockRange.visitorCount, 6);
+assert.equal(rackStockRange.stockTarget - rackStockRange.visitorCount, 8);
+assert.equal(expandedStockRange.stockTarget - expandedStockRange.visitorCount, 10);
+assert.equal(dailyTradeProfile({ day: 1, capacity: 20 }).choiceBuffer, 3, "Opening week must keep its gentle stock target.");
+
 const legacyInput = dailyTradeProfile({ day: "bad", inventoryCount: -5, capacity: 0 });
 assert.equal(legacyInput.day, 1);
 assert.equal(legacyInput.visitorCount, 3);

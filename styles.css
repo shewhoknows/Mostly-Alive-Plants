@@ -1638,6 +1638,11 @@ h1 span {
   background: rgba(212, 232, 219, 0.7);
 }
 
+.bench-active-jobs .bench-job[data-work-area="recovery"] {
+  --bench-accent: var(--aqua);
+  background: rgba(211, 198, 218, 0.52);
+}
+
 .bench-plant,
 .bench-job,
 .bench-plants > button,

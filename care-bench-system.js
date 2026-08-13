@@ -1,7 +1,9 @@
 import { INVENTORY_CAPACITY, SLOT_DATA, SPECIES } from "./game-data.js";
 
-export const CARE_BENCH_STATE_VERSION = 2;
+export const CARE_BENCH_STATE_VERSION = 3;
 export const CARE_BENCH_BASE_SLOTS = 1;
+export const REHABILITATION_BASE_SLOTS = 2;
+export const REHABILITATION_UPGRADE_SLOTS = 3;
 
 export const BENCH_JOB_TYPES = Object.freeze({
   REPOT: "repot",
@@ -127,6 +129,7 @@ export function createDefaultBenchState() {
   return {
     version: CARE_BENCH_STATE_VERSION,
     slotCount: CARE_BENCH_BASE_SLOTS,
+    rehabilitationSlotCount: REHABILITATION_BASE_SLOTS,
     nextJobNumber: 1,
     jobs: [],
   };
@@ -156,9 +159,25 @@ export function migrateBenchState(value) {
   return {
     version: CARE_BENCH_STATE_VERSION,
     slotCount: safeInteger(value?.slotCount, CARE_BENCH_BASE_SLOTS, CARE_BENCH_BASE_SLOTS),
+    rehabilitationSlotCount: safeInteger(
+      value?.rehabilitationSlotCount,
+      REHABILITATION_BASE_SLOTS,
+      REHABILITATION_BASE_SLOTS,
+    ),
     nextJobNumber: Math.max(savedNextNumber, highestJobNumber(jobs) + 1),
     jobs,
   };
+}
+
+function workAreaForType(type) {
+  return type === BENCH_JOB_TYPES.REHABILITATE ? "rehabilitation" : "care-bench";
+}
+
+function workAreaUsage(bench, type) {
+  const area = workAreaForType(type);
+  const used = bench.jobs.filter((job) => workAreaForType(job.type) === area).length;
+  const capacity = area === "rehabilitation" ? bench.rehabilitationSlotCount : bench.slotCount;
+  return { area, used, capacity };
 }
 
 function benchStatusForJob(job) {
@@ -281,8 +300,15 @@ export function validateBenchJob({
   if (plant.benchStatus || bench.jobs.some((job) => job.plantId === plant.id)) {
     return failure("plant-busy", "This plant already has a bench job.", context);
   }
-  if (bench.jobs.length >= bench.slotCount) {
-    return failure("bench-full", "The care bench is busy.", context);
+  const workArea = workAreaUsage(bench, type);
+  if (workArea.used >= workArea.capacity) {
+    return failure(
+      workArea.area === "rehabilitation" ? "rehabilitation-full" : "bench-full",
+      workArea.area === "rehabilitation"
+        ? "The Recovery Station is full."
+        : "The Care Bench is full.",
+      context,
+    );
   }
   if (safeCoins < cost.coins) {
     return failure("not-enough-coins", `This job needs ${cost.coins} coins.`, context);

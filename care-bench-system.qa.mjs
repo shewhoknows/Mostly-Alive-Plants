@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import {
   BENCH_JOB_TYPES,
   CARE_BENCH_STATE_VERSION,
+  CARE_BENCH_BASE_SLOTS,
   GROW_LAMP_PROPAGATION_MATURITY_DAYS,
   GROW_LAMP_REHABILITATE_PROTECTION_DAYS,
   GROW_LAMP_REPOT_VALUE_BONUS,
   PROPAGATION_MATURITY_DAYS,
   REHABILITATE_PROTECTION_DAYS,
   REHABILITATE_VALUE_RESTORE,
+  REHABILITATION_BASE_SLOTS,
+  REHABILITATION_UPGRADE_SLOTS,
   REPOT_VALUE_BONUS,
   advanceAndApplyBenchJobs,
   createDefaultBenchState,
@@ -42,6 +45,8 @@ function plant(id, overrides = {}) {
 
 let inventory = [plant("repot-me", { rootComfort: "cramped", rootAgeDays: 4, price: 18 })];
 let benchState = createDefaultBenchState();
+assert.equal(benchState.slotCount, CARE_BENCH_BASE_SLOTS);
+assert.equal(benchState.rehabilitationSlotCount, REHABILITATION_BASE_SLOTS);
 const repot = startBenchJob({
   type: BENCH_JOB_TYPES.REPOT,
   plantId: "repot-me",
@@ -89,6 +94,74 @@ const legacyBench = migrateBenchState({
 });
 assert.equal(legacyBench.version, CARE_BENCH_STATE_VERSION);
 assert.equal(legacyBench.jobs[0].lampAssisted, false);
+assert.equal(legacyBench.rehabilitationSlotCount, REHABILITATION_BASE_SLOTS);
+
+const parallelPlants = [
+  plant("rehab-a", { needsRehabilitation: true, slot: null }),
+  plant("rehab-b", { needsRehabilitation: true, slot: null }),
+  plant("rehab-c", { needsRehabilitation: true, slot: null }),
+  plant("repot-a", { rootComfort: "cramped", slot: null }),
+  plant("repot-b", { rootComfort: "cramped", slot: null }),
+];
+const firstParallelRehab = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "rehab-a",
+  inventory: parallelPlants,
+  benchState: createDefaultBenchState(),
+  coins: 100,
+  day: 5,
+});
+const secondParallelRehab = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "rehab-b",
+  inventory: firstParallelRehab.inventory,
+  benchState: firstParallelRehab.benchState,
+  coins: firstParallelRehab.coins,
+  day: 5,
+});
+assert.equal(secondParallelRehab.ok, true, "Two Rehabilitation jobs must fit the base Recovery Station.");
+const fullRecovery = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "rehab-c",
+  inventory: secondParallelRehab.inventory,
+  benchState: secondParallelRehab.benchState,
+  coins: secondParallelRehab.coins,
+  day: 5,
+});
+assert.equal(fullRecovery.ok, false);
+assert.equal(fullRecovery.code, "rehabilitation-full");
+const simultaneousRepot = startBenchJob({
+  type: BENCH_JOB_TYPES.REPOT,
+  plantId: "repot-a",
+  inventory: secondParallelRehab.inventory,
+  benchState: secondParallelRehab.benchState,
+  coins: secondParallelRehab.coins,
+  day: 5,
+});
+assert.equal(simultaneousRepot.ok, true, "Recovery work must not consume the Care Bench.");
+const fullCareBench = startBenchJob({
+  type: BENCH_JOB_TYPES.REPOT,
+  plantId: "repot-b",
+  inventory: simultaneousRepot.inventory,
+  benchState: simultaneousRepot.benchState,
+  coins: simultaneousRepot.coins,
+  day: 5,
+});
+assert.equal(fullCareBench.ok, false);
+assert.equal(fullCareBench.code, "bench-full");
+const expandedRecoveryState = {
+  ...secondParallelRehab.benchState,
+  rehabilitationSlotCount: REHABILITATION_UPGRADE_SLOTS,
+};
+const expandedRecovery = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "rehab-c",
+  inventory: secondParallelRehab.inventory,
+  benchState: expandedRecoveryState,
+  coins: secondParallelRehab.coins,
+  day: 5,
+});
+assert.equal(expandedRecovery.ok, true, "The Recovery trolley must add a third Rehabilitation place.");
 
 const thirstyNormal = startBenchJob({
   type: BENCH_JOB_TYPES.REHABILITATE,

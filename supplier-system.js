@@ -367,7 +367,7 @@ function configuredQuantityForLot(type, { day, customers, inventory, capacity })
   const availableStock = inventory.filter(isAvailableForCustomers);
   const covered = maximumAssignedNeeds(availableStock, customers.map(customerRequirement));
   const requiredTopUp = Math.max(0, customers.length - covered);
-  if (type.id === "curated-pair") return recommended > 0 ? Math.min(5, Math.max(2, recommended - 1)) : 2;
+  if (type.id === "curated-pair") return recommended > 0 ? Math.min(7, Math.max(2, requiredTopUp, recommended)) : 2;
   if (type.id === "mystery-rescue-lot") return recommended > 0 ? Math.min(7, Math.max(requiredTopUp, recommended + 1)) : Math.max(4, requiredTopUp);
   return recommended > 0 ? Math.min(7, Math.max(3, requiredTopUp, recommended)) : Math.max(3, requiredTopUp);
 }
@@ -406,12 +406,38 @@ function chooseLotSpecies(type, { day, customers, inventory, capacity }) {
   };
 }
 
-function lotDescription(type, quantity) {
+function rescueStressCount(quantity) {
+  if (quantity <= 0) return 0;
+  if (quantity <= 2) return quantity;
+  return quantity >= 6 ? 3 : 2;
+}
+
+function deliveryManifest(type, speciesList) {
+  const stressedQuantity = type.id === "mystery-rescue-lot"
+    ? rescueStressCount(speciesList.length)
+    : 0;
+  const healthyQuantity = speciesList.length - stressedQuantity;
+  return {
+    stressedQuantity,
+    healthyQuantity,
+    deliveries: speciesList.map((species, index) => ({
+      speciesId: species.id,
+      speciesName: species.name,
+      condition: index < healthyQuantity ? "healthy" : "stressed",
+    })),
+  };
+}
+
+function lotDescription(type, quantity, manifest) {
   if (type.id === "curated-pair") {
     return `${quantity} previewed plants chosen to suit today's homes and improve the shop's range.`;
   }
   if (type.id === "mystery-rescue-lot") {
-    return `${quantity} discounted mystery plants that arrive stressed but can recover with thoughtful care.`;
+    const rescueCopy = `${manifest.stressedQuantity} discounted ${manifest.stressedQuantity === 1 ? "rescue plant" : "rescue plants"}`;
+    const healthyCopy = manifest.healthyQuantity
+      ? ` and ${manifest.healthyQuantity} healthy request-covering ${manifest.healthyQuantity === 1 ? "plant" : "plants"}`
+      : "";
+    return `${rescueCopy}${healthyCopy}. Rescue plants need Rehabilitation to restore their full value.`;
   }
   return `${quantity} healthy, familiar plants with a balanced mix of care needs.`;
 }
@@ -435,6 +461,7 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
   const chosen = chooseLotSpecies(type, { day, customers, inventory, capacity });
   const { speciesList } = chosen;
   const quantity = speciesList.length;
+  const manifest = deliveryManifest(type, speciesList);
   const nurseryCost = calculateCost(type, speciesList);
   const hardshipCredit = type.id === "mystery-rescue-lot" && coins < nurseryCost;
   const cost = hardshipCredit ? coins : nurseryCost;
@@ -455,14 +482,19 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
         ? quantity === 0
           ? "No shelf space remains for a delivery."
           : `${quantity === 1 ? "One plant" : `${quantity} plants`} selected as a shelf-space top-up.`
-        : lotDescription(type, quantity),
+        : lotDescription(type, quantity, manifest),
       hardshipCredit ? "The nursery has put this one on a pay-what-you-can rescue tab." : "",
     ].filter(Boolean).join(" "),
     speciesNames: speciesList.map((species) => species.name),
     speciesIds: speciesList.map((species) => species.id),
+    deliveries: manifest.deliveries,
     cost,
     reveal: revealMetadata(type, speciesList),
-    condition: type.selection.condition,
+    condition: manifest.stressedQuantity && manifest.healthyQuantity
+      ? "mixed"
+      : manifest.stressedQuantity ? "stressed" : "healthy",
+    stressedQuantity: manifest.stressedQuantity,
+    healthyQuantity: manifest.healthyQuantity,
     quantity,
     affordable,
     fitsCapacity,
@@ -513,6 +545,7 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
     RARE_NURSERY_FILL_TYPE,
   );
   const speciesList = [...rareSpecies, ...commonSpecies];
+  const manifest = deliveryManifest(type, speciesList);
   const nurseryCost = calculateCost(type, speciesList);
   const affordable = coins >= nurseryCost;
   const fitsCapacity = inventory.length + speciesList.length <= capacity;
@@ -537,9 +570,12 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
     ].join(" "),
     speciesNames: speciesList.map((species) => species.name),
     speciesIds: speciesList.map((species) => species.id),
+    deliveries: manifest.deliveries,
     cost: nurseryCost,
     reveal: revealMetadata(type, speciesList),
     condition: type.selection.condition,
+    stressedQuantity: 0,
+    healthyQuantity: manifest.healthyQuantity,
     quantity: speciesList.length,
     affordable,
     fitsCapacity,
@@ -567,6 +603,7 @@ function noPurchaseFallback(day, inventory, customers, capacity) {
     description: "Your displays already hold a suitable plant for every visitor. Keep your coins and open from current stock.",
     speciesNames: [],
     speciesIds: [],
+    deliveries: [],
     cost: 0,
     reveal: {
       level: "current-stock",
@@ -578,6 +615,8 @@ function noPurchaseFallback(day, inventory, customers, capacity) {
       visibleTraits: [],
     },
     condition: "existing-stock",
+    stressedQuantity: 0,
+    healthyQuantity: 0,
     quantity: 0,
     affordable: true,
     fitsCapacity: true,

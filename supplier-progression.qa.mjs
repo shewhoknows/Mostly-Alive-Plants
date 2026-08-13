@@ -153,6 +153,9 @@ assert.equal(rescueLot.cost, 0);
 assert.equal(rescueLot.affordable, true);
 assert.equal(rescueLot.coversRequests, true);
 assert.equal(rescueLot.selectable, true);
+assert.ok(rescueLot.stressedQuantity >= 2 && rescueLot.stressedQuantity <= 3);
+assert.equal(rescueLot.deliveries.filter((delivery) => delivery.condition === "stressed").length, rescueLot.stressedQuantity);
+assert.equal(rescueLot.deliveries.filter((delivery) => delivery.condition === "healthy").length, rescueLot.healthyQuantity);
 
 const signDay = 15;
 const signProfile = dailyTradeProfile({ day: signDay, inventoryCount: 0, capacity: 16, visitorBonus: 1 });
@@ -174,6 +177,29 @@ const signRescue = signLots.find((lot) => lot.supplierId === "mystery-rescue-lot
 assert.equal(signRescue.quantity, 7);
 assert.equal(signRescue.selectable, true);
 assert.equal(inventoryCoversCustomers(previewInventory(signRescue), signCustomers), true);
+assert.equal(signRescue.stressedQuantity, 3);
+assert.equal(signRescue.healthyQuantity, 4);
+
+const curatedCarryStock = Array.from({ length: 10 }, (_, index) => plantRecord(SPECIES[index], `carry-${index}`));
+const curatedCarryProfile = dailyTradeProfile({ day: 20, inventoryCount: curatedCarryStock.length, capacity: 20 });
+const curatedCarryCustomers = generateCustomerBriefs({
+  day: 20,
+  count: curatedCarryProfile.visitorCount,
+  inventory: curatedCarryStock,
+  capacity: 20,
+});
+const curatedCarryLot = generateSupplierLots({
+  day: 20,
+  customers: curatedCarryCustomers,
+  inventory: curatedCarryStock,
+  coins: 999,
+  capacity: 20,
+}).find((lot) => lot.supplierId === "curated-pair");
+assert.equal(
+  curatedCarryLot.quantity,
+  curatedCarryProfile.stockTarget - curatedCarryStock.length,
+  "Curated stock must refill the full range target instead of draining one plant per day.",
+);
 
 const fullMixedStock = [
   ...Array.from({ length: 6 }, (_, index) => plantRecord(SPECIES[index % SPECIES.length], `ready-${index}`)),

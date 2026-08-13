@@ -1091,8 +1091,8 @@ export const SUPPLIER_TYPES = [
   {
     id: "reliable-tray",
     name: "Reliable Tray",
-    description: "Three healthy, familiar plants with a balanced mix of care needs.",
-    quantity: { min: 3, max: 3 },
+    description: "Healthy, familiar plants with a balanced mix of care needs.",
+    quantity: { min: 3, max: 7 },
     pricing: {
       basis: "sum-wholesale-cost",
       multiplier: 1,
@@ -1108,9 +1108,9 @@ export const SUPPLIER_TYPES = [
   },
   {
     id: "curated-pair",
-    name: "Curated Pair",
-    description: "Two previewed plants chosen to suit today's homes and display opportunities.",
-    quantity: { min: 2, max: 2 },
+    name: "Curated Selection",
+    description: "Previewed plants chosen to suit today's homes and restore the shop's full stock range.",
+    quantity: { min: 2, max: 7 },
     pricing: {
       basis: "sum-wholesale-cost",
       multiplier: 1.15,
@@ -1127,8 +1127,8 @@ export const SUPPLIER_TYPES = [
   {
     id: "mystery-rescue-lot",
     name: "Mystery Rescue Lot",
-    description: "Three discounted mystery plants with nursery stress and reduced sale value. Rehabilitate restores their full value.",
-    quantity: { min: 3, max: 3 },
+    description: "A mixed delivery with two or three discounted rescue plants and healthy request-covering stock. Rehabilitate restores lost rescue value.",
+    quantity: { min: 3, max: 7 },
     pricing: {
       basis: "sum-wholesale-cost",
       multiplier: 0.6,

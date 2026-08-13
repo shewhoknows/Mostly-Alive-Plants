@@ -243,3 +243,15 @@
 - Changed the Retail Supply Shelf to show one front-facing item per unit in each standard customer add-on pack. A successful add-on sale updates the 3D shelf at once, so fertilizer, fungicide, and potting-soil stock visibly falls with the saved count.
 - Replaced the long morning forecast paragraph with four labeled cards for Visitors, Plant requests, Shop cost, and Stock plan. The supplier board now fits a 1280×720 browser window without clipping.
 - Browser validation covered the compact station label, a live two-plant weekly order from available stock through completion readiness, a three-to-two fungicide shelf change during a customer sale, and the Week 2 morning supplier layout. All JavaScript, DOM, ARIA, supplier, neighborhood, plant, Care Bench, health, expansion, project, supply, and trade checks passed with no browser console errors.
+
+## 2026-08-13 — Balanced stock range and specialist capacity
+
+- Split job capacity by purpose. Repot and Propagate share the Care Bench. Rehabilitation now has two separate Recovery Station places by default, so ordinary nursery-age stress does not block other plant work.
+- Added a removable Recovery trolley upgrade for 85 coins and 22 Bloom. It gives the Recovery Station a third Rehabilitation place. The game blocks removal while that added place is in use.
+- Rebuilt the specialist 3D work area. Rehabilitation plants use the two recovery positions or the upgrade trolley. Propagation plants use a separate low cutting rack. The old large overhead board was replaced by small fixture labels.
+- Changed the mature carry-over target from one fixed range to six plants at capacity 12, eight at capacity 16, and ten at capacity 20. Early Weeks 1–2 keep their original gentle targets.
+- Closing overstock care now compares remaining plants with that carry-over range. It no longer compares closing stock with the larger pre-sale opening target.
+- Renamed Curated Pair to Curated Selection. It now refills the full planned stock range instead of ordering one plant less and slowly draining the shop.
+- Changed Mystery Rescue deliveries to a mixed manifest. Only two or three plants arrive nursery-stressed. Any additional plants arrive healthy. Each carton keeps its own saved condition, and supplier trust clues now identify only the real rescue subset.
+- Added direct QA for separate work-area limits, the third Recovery place, save migration, capacity-scaled stock targets, full Curated refills, and mixed rescue carton counts.
+- All ten QA suites passed. A 50-day flow check ended at the intended six, eight, and ten carry-over plants for 12, 16, and 20 capacity. Browser checks covered the mixed Rescue card, Curated Selection, the Recovery trolley upgrade card, the separate 3D recovery and cutting fixtures, the two-capacity summary, saved-state reload, and a clean console.

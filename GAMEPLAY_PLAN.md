@@ -17,7 +17,7 @@ Target session shape:
 The commerce-and-neighborhood slice from this plan and the attached 35-day campaign plan is now playable:
 
 - deterministic morning customer forecast, three nursery lots, and daily demand that grows from three visitors to four–six;
-- wholesale invoices, per-plant acquisition cost, 12-plant starting capacity, persistent unsold stock, and adaptive shipments of up to seven plants;
+- wholesale invoices, per-plant acquisition cost, 12-plant starting capacity, persistent unsold stock, capacity-scaled range targets, and adaptive shipments of up to seven plants;
 - preparation phase with animated cartons, species-specific care, arrangement mode, and atomic display/bench swaps;
 - shade, indirect, and sun slots with readable ideal/tolerable/poor fit;
 - visible Quick, Fair, and Boutique tags on every plant;
@@ -28,12 +28,12 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - daily operating costs, recoverable unpaid bills, a one-time emergency grant, and net-profit reporting;
 - weekly shop projects from Week 3, with rising coin-and-Bloom costs and visible room improvements;
 - extra closing care costs for stock above the daily target from Week 4;
-- a Care Bench with persistent Repot, Rehabilitate, and Propagate jobs, root-bound stock, and juvenile plants;
+- separate job capacity: Repot and Propagate share the Care Bench, while Rehabilitation has two Recovery Station places and an optional third-place trolley;
 - three-morning nursery age, visible plant-health decline and recovery, and deterministic mites or fungus from Day 6;
 - a physical Retail Supply Shelf with reusable Clip Grow Lights, fertilizer, issue treatments, potting soil, and optional customer add-ons;
-- five utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
+- six utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
 - a persistent main-panel Care Bench entry that shows timing, readiness, and active jobs;
-- a separate marked Recovery and Propagation Station for Rehabilitate and Propagate jobs;
+- a separate marked Recovery and Propagation Work Area with independent Recovery capacity and a cutting rack;
 - one optional weekly order, Held stock, small neighborhood events, exact return visits, and nursery relationship levels;
 - safe resale of visible shop improvements for half of their coin cost;
 - Bloom reputation standings and migration of older saves into version 8.
@@ -59,7 +59,7 @@ The morning offers three supplier cards:
 
 - **Reliable tray:** disclosed common plants with a predictable margin.
 - **Curated selection:** specific or uncommon plants with a higher cost and value.
-- **Rescue lot:** stressed, partly hidden plants; cheapest and closest to the original mystery-carton charm.
+- **Rescue lot:** two or three stressed, partly hidden rescue plants plus healthy request-covering stock; cheapest and closest to the original mystery-carton charm.
 
 Each card shows quantity, known species or traits, wholesale price, and condition. Orders arrive for the preparation phase. Quantities adapt to visitor demand, stock level, free space, and missing traits. Early lots stay small. Normal later lots can contain up to seven plants. The Rare Nursery collection can contain eight after a full sellout because it adds one specialist specimen to seven request matches. A no-purchase card appears when current ready stock can serve the full queue.
 
@@ -68,6 +68,7 @@ Guardrails:
 - Wholesale price averages 45–55% of fair retail value.
 - Early daily purchasing choices cost roughly 18–32 coins.
 - Starting capacity is 12 plants. The Delivery Rack raises it to 16. Display Shelves add four display slots and can raise the combined capacity to 20.
+- From Week 4, the planned carry-over range is six plants at capacity 12, eight at capacity 16, and ten at capacity 20. The Curated Selection restores this target instead of slowly draining stock.
 - A consignment tray appears when cash is low, preventing bankruptcy deadlocks.
 
 ### 2. Forgiving plant condition
@@ -121,7 +122,7 @@ The preparation bench now has a persistent work queue:
 - **Rehabilitate:** costs 8 coins, completes next morning, restores a stressed rescue, and protects it for two shop days.
 - **Propagate:** costs 12 coins and 5 Bloom, uses a thriving mature plant, takes two mornings, and creates a lower-value juvenile.
 
-The bench starts with one job slot. The Bench Shelf adds a second. A juvenile uses stock capacity and grows for three mornings before it can be sold. A bench plant cannot serve a customer brief. The game checks the remaining visitor queue before it accepts a job, so bench work cannot make the current day impossible.
+Repot and Propagate share one Care Bench place. The Bench Shelf adds a second. Rehabilitation has two separate Recovery Station places by default. The Recovery trolley adds a third. A juvenile uses stock capacity and grows for three mornings before it can be sold. A plant in any job cannot serve a customer brief. The game checks the remaining visitor queue before it accepts a job, so plant work cannot make the current day impossible.
 
 Root-bound plants remain alive, but they can sell only at Quick price until repotted. Repot and rehabilitation costs enter the plant’s cost basis, so later net profit stays honest. Rehabilitate also resets the three-morning nursery-age clock.
 
@@ -145,7 +146,7 @@ A week has five shop days:
 - Tuesday–Thursday carry progress forward alongside regular trade.
 - Friday resolves the objective and opens a dedicated weekly recap.
 
-The five-day shell, objective rotation, rewards, and Friday recap are implemented. Weekly customer orders remain a later extension: they can request two or three plants by Friday, allow stock to be marked Held, and pay a deposit plus profit and Bloom. Missing one should lose the opportunity, not money the player already earned.
+The five-day shell, objective rotation, rewards, Friday recap, and one optional weekly customer order are implemented. An order requests two or three plants by Friday, lets stock be marked Held, and pays a deposit plus profit and Bloom. Missing one loses the opportunity, not money the player already earned.
 
 Events create plans rather than punishments: sunny spell, apartment move-in week, café opening, plant swap, school fundraiser, rescue shipment, neighborhood workshop, or community market.
 
@@ -156,7 +157,8 @@ The current physical upgrades change what the player can do:
 - **Grow Lamp:** improves all new Care Bench jobs and pulses while it supports active work.
 - **Rain Barrel:** slows soil drying.
 - **Delivery Rack:** raises stock capacity from 12 to 16.
-- **Bench Shelf:** adds a second bench-job slot.
+- **Bench Shelf:** adds a second shared Repot or Propagate place.
+- **Recovery Trolley:** adds a third Rehabilitation place without consuming Care Bench capacity.
 - **Shop Sign:** adds one daily visitor after Week 1.
 
 The permanent shop-growth branch now adds:
@@ -221,6 +223,7 @@ This created the first complete management chain using the original room and car
 - **Plant-health and Retail Supply Shelf milestone — complete:** three-morning nursery age, visible stress and recovery, deterministic mites and fungus, treatments, fertilizer growth, reusable Clip Grow Lights, and optional supply add-ons.
 - **Neighborhood commitments milestone — complete:** exact sale follow-ups, one optional weekly order, Held stock, small positive or neutral events, and three supplier relationship levels.
 - **Catalog expansion — complete:** six later-week standard plants bring the catalog to 26 distinct species.
+- **Stock-flow and specialist-capacity milestone — complete:** shelf capacity now preserves a larger sale range, Curated deliveries refill it, Rescue deliveries limit nursery stress to two or three plants, and Rehabilitation has its own two-to-three-place capacity.
 - Add new shelf modules and movable display fixtures. The first four-slot shelf module is complete.
 - Add upgrade branches that change the room and shop routine. The first six-item permanent branch is complete.
 - Add seasonal demand, larger contracts, and a modest shop expansion.

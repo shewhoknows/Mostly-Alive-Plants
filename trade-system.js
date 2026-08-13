@@ -63,11 +63,11 @@ function customerCountForWeek(week) {
   return CUSTOMERS.filter((customer) => positiveInteger(customer.unlockWeek) <= week).length;
 }
 
-function choiceBufferForWeek(week) {
-  if (week === 1) return 3;
-  if (week === 2) return 4;
-  if (week === 3) return 5;
-  return 6;
+function choiceBufferForWeek(week, capacity) {
+  const base = week === 1 ? 3 : week === 2 ? 4 : week === 3 ? 5 : 6;
+  if (week < 3) return base;
+  const shelfBonus = Math.max(0, Math.floor((capacity - INVENTORY_CAPACITY) / 2));
+  return base + shelfBonus;
 }
 
 function operatingCost(calendar, visitorCount, inventoryCount) {
@@ -182,7 +182,7 @@ export function dailyTradeProfile(options = {}) {
     ? capacity
     : Math.min(capacity, nonNegativeInteger(source.serviceableCapacity));
   const visitorCount = Math.min(requestedVisitors + visitorBonus, availableCustomerCount, serviceableCapacity);
-  const choiceBuffer = choiceBufferForWeek(calendar.week);
+  const choiceBuffer = choiceBufferForWeek(calendar.week, capacity);
   const stockTarget = Math.min(capacity, visitorCount + choiceBuffer);
   const costs = operatingCost(calendar, visitorCount, inventoryCount);
   const pressure = stockPressure({ inventoryCount, visitorCount, stockTarget, capacity });

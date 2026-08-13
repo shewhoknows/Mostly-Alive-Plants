@@ -378,11 +378,16 @@ export function applySupplierRelationshipToLots(lots = [], state, coins = 0) {
   return (Array.isArray(lots) ? lots : []).map((lot) => {
     const next = { ...lot, reveal: lot.reveal ? { ...lot.reveal } : lot.reveal };
     if (relationship.level >= 2 && next.supplierId === "mystery-rescue-lot") {
-      next.reveal = { ...next.reveal, visibleTraits: [...new Set(next.speciesIds?.flatMap((id) => SPECIES.find((species) => species.id === id)?.traits || []) || [])] };
+      const rescueIds = Array.isArray(next.deliveries)
+        ? next.deliveries.filter((delivery) => delivery.condition === "stressed").map((delivery) => delivery.speciesId)
+        : next.speciesIds;
+      next.reveal = { ...next.reveal, visibleTraits: [...new Set(rescueIds?.flatMap((id) => SPECIES.find((species) => species.id === id)?.traits || []) || [])] };
       next.relationshipClue = `Rescue traits: ${next.reveal.visibleTraits.join(", ")}`;
     }
     if (relationship.level >= 3 && next.supplierId === "mystery-rescue-lot" && next.speciesNames?.length) {
-      next.relationshipClue = `Known rescue: ${next.speciesNames[0]}. ${next.relationshipClue || ""}`.trim();
+      const knownRescue = next.deliveries?.find((delivery) => delivery.condition === "stressed")?.speciesName
+        || next.speciesNames[0];
+      next.relationshipClue = `Known rescue: ${knownRescue}. ${next.relationshipClue || ""}`.trim();
     }
     if (relationship.level >= 3 && next.supplierId === "reliable-tray") {
       next.originalCost = next.cost;

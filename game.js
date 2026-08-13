@@ -35,6 +35,8 @@ import {
   BENCH_JOB_DURATIONS,
   BENCH_JOB_TYPES,
   CARE_BENCH_BASE_SLOTS,
+  REHABILITATION_BASE_SLOTS,
+  REHABILITATION_UPGRADE_SLOTS,
   advanceAndApplyBenchJobs,
   createDefaultBenchState,
   isConditionProtected,
@@ -220,6 +222,7 @@ function freshState() {
       rainBarrel: false,
       deliveryRack: false,
       benchShelf: false,
+      rehabilitationRack: false,
       shopSign: false,
     },
   };
@@ -340,6 +343,9 @@ function loadState() {
       benchState: {
         ...migratedBench,
         slotCount: savedUpgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+        rehabilitationSlotCount: savedUpgrades.rehabilitationRack
+          ? REHABILITATION_UPGRADE_SLOTS
+          : REHABILITATION_BASE_SLOTS,
       },
       inventory,
     });
@@ -663,6 +669,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const rehabilitationJobStaging = [
     new THREE.Vector3(-5.15, 1.17, 3.62),
     new THREE.Vector3(-4.05, 1.17, 3.75),
+    new THREE.Vector3(-5.1, 0.94, 2.18),
+  ];
+  const propagationJobStaging = [
+    new THREE.Vector3(-3.25, 0.92, 3.62),
+    new THREE.Vector3(-2.05, 0.92, 3.62),
   ];
   const rackStaging = [
     new THREE.Vector3(4.55, 0.17, -0.66),
@@ -673,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const floorStaging = [
     new THREE.Vector3(1.85, 0.03, -1.35),
     new THREE.Vector3(0.75, 0.03, -1.25),
-    new THREE.Vector3(-4.7, 0.03, 1.15),
+    new THREE.Vector3(1.2, 0.03, 1.45),
     new THREE.Vector3(-3.65, 0.03, 1.25),
     new THREE.Vector3(3.42, 0.03, -0.55),
     new THREE.Vector3(2.6, 0.03, -0.1),
@@ -1329,6 +1340,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const root = new THREE.Group();
     const clinic = material(0x8eaea0, { roughness: 0.72 });
     const glass = material(0xc8ded2, { roughness: 0.3, metalness: 0.08 });
+    const recoveryLabel = material(0xf0e6cc, { map: textTexture("PLANT RECOVERY", "2 CARE PLACES") });
+    const propagationLabel = material(0xf0e6cc, { map: textTexture("PROPAGATION", "CUTTINGS") });
     box(root, [2.05, 0.16, 1.18], [0, 1.05, 0], clinic);
     box(root, [1.78, 0.08, 0.92], [0, 0.54, 0], cream);
     [[-0.86, -0.44], [0.86, -0.44], [-0.86, 0.44], [0.86, 0.44]].forEach(([x, z]) => {
@@ -1347,17 +1360,44 @@ document.addEventListener("DOMContentLoaded", () => {
     inspectionLamp.rotation.z = Math.PI;
     root.add(inspectionLamp);
     const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.58, 0.5),
-      material(0xf0e6cc, { map: textTexture("RECOVERY + PROP", "SPECIALIST STATION") }),
+      new THREE.PlaneGeometry(1.45, 0.3),
+      recoveryLabel,
     );
-    label.position.set(0, 2.9, -0.25);
+    label.position.set(0, 0.78, 0.61);
     root.add(label);
-    box(root, [1.72, 0.62, 0.08], [0, 2.9, -0.31], darkWood);
+
+    const propagationRack = new THREE.Group();
+    box(propagationRack, [2.25, 0.14, 0.92], [2.05, 0.82, 0.04], woodMat);
+    box(propagationRack, [2.25, 0.11, 0.76], [2.05, 0.24, 0.02], cream);
+    [[1.02, -0.32], [3.08, -0.32], [1.02, 0.34], [3.08, 0.34]].forEach(([x, z]) => {
+      box(propagationRack, [0.1, 0.82, 0.1], [x, 0.41, z], darkWood);
+    });
+    const propagationSign = new THREE.Mesh(new THREE.PlaneGeometry(1.55, 0.28), propagationLabel);
+    propagationSign.position.set(2.05, 0.56, 0.51);
+    propagationRack.add(propagationSign);
+    propagationRack.name = "propagation-workstation";
+    root.add(propagationRack);
+
+    const recoveryRack = new THREE.Group();
+    box(recoveryRack, [1.16, 0.14, 0.88], [-0.4, 0.82, -1.37], clinic);
+    [[-0.88, -1.68], [0.08, -1.68], [-0.88, -1.08], [0.08, -1.08]].forEach(([x, z]) => {
+      box(recoveryRack, [0.09, 0.8, 0.09], [x, 0.4, z], brass);
+    });
+    const rackSign = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.9, 0.25),
+      material(0xf0e6cc, { map: textTexture("RECOVERY", "PLACE 3") }),
+    );
+    rackSign.position.set(-0.4, 0.57, -0.91);
+    recoveryRack.add(rackSign);
+    recoveryRack.visible = Boolean(state.upgrades.rehabilitationRack);
+    recoveryRack.name = "rehabilitation-rack";
+    root.add(recoveryRack);
+
     root.position.set(-4.7, 0, 3.55);
     root.name = "rehabilitation-station";
     registerStation(root, {
       id: "rehabilitation-station",
-      label: "Recovery and Propagation Station",
+      label: "Recovery and Propagation Work Area",
       ringScale: 1.5,
       selectionAnchor: new THREE.Vector3(0, 1.06, 0),
     });
@@ -1911,23 +1951,35 @@ document.addEventListener("DOMContentLoaded", () => {
     plantObjects.forEach((object) => unregister(object, { dispose: true }));
     plantObjects.clear();
     let loose = 0;
-    let benchJob = 0;
-    let specialistJob = 0;
+    let repotJob = 0;
+    let rehabilitationJob = 0;
+    let propagationJob = 0;
     state.inventory.forEach((plant) => {
       const object = createPlant(plant);
       if (plant.benchStatus) {
-        const isSpecialistJob = [BENCH_JOB_TYPES.REHABILITATE, BENCH_JOB_TYPES.PROPAGATE].includes(plant.benchStatus.type);
-        const positions = isSpecialistJob ? rehabilitationJobStaging : benchJobStaging;
-        const index = isSpecialistJob ? specialistJob : benchJob;
+        const type = plant.benchStatus.type;
+        const positions = type === BENCH_JOB_TYPES.REHABILITATE
+          ? rehabilitationJobStaging
+          : type === BENCH_JOB_TYPES.PROPAGATE
+            ? propagationJobStaging
+            : benchJobStaging;
+        const index = type === BENCH_JOB_TYPES.REHABILITATE
+          ? rehabilitationJob
+          : type === BENCH_JOB_TYPES.PROPAGATE
+            ? propagationJob
+            : repotJob;
         const position = positions[Math.min(index, positions.length - 1)];
         object.position.copy(position);
-        object.scale.setScalar(isSpecialistJob
-          ? Math.min(object.userData.looseScale || 0.78, 0.46)
+        object.scale.setScalar(type === BENCH_JOB_TYPES.REHABILITATE
+          ? Math.min(object.userData.looseScale || 0.78, index < 2 ? 0.46 : 0.4)
+          : type === BENCH_JOB_TYPES.PROPAGATE
+            ? Math.min(object.userData.looseScale || 0.78, 0.38)
           : index === 0
             ? Math.min(object.userData.looseScale || 0.78, 0.7)
             : Math.min(object.userData.looseScale || 0.78, 0.55));
-        if (isSpecialistJob) specialistJob += 1;
-        else benchJob += 1;
+        if (type === BENCH_JOB_TYPES.REHABILITATE) rehabilitationJob += 1;
+        else if (type === BENCH_JOB_TYPES.PROPAGATE) propagationJob += 1;
+        else repotJob += 1;
       } else if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
         const slot = SLOT_DATA[plant.slot];
         object.position.set(slot.x, slot.y, slot.z);
@@ -2242,7 +2294,9 @@ document.addEventListener("DOMContentLoaded", () => {
       badges.className = "supplier-badges";
       const condition = document.createElement("span");
       condition.className = "supplier-badge";
-      condition.textContent = lot.condition === "stressed" ? "Needs Rehabilitate" : lot.speciesNames?.length ? "Healthy stock" : "Current stock";
+      condition.textContent = lot.stressedQuantity
+        ? `${lot.stressedQuantity} rescue · ${lot.healthyQuantity || 0} healthy`
+        : lot.speciesNames?.length ? "Healthy stock" : "Current stock";
       const capacity = document.createElement("span");
       capacity.className = "supplier-badge";
       capacity.textContent = fits ? `${lot.speciesNames?.length || 0} spaces used` : "Not enough space";
@@ -2297,13 +2351,16 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyStockCost += lot.cost || 0;
     state.neighborhoodState = recordSupplierOrder(state.neighborhoodState, lot.supplierId || lot.kind).state;
     const speciesNames = [...(lot.speciesNames || [])];
+    const deliveries = Array.isArray(lot.deliveries) && lot.deliveries.length === speciesNames.length
+      ? lot.deliveries
+      : speciesNames.map((speciesName) => ({ speciesName, condition: lot.condition || "healthy" }));
     const acquisitionCosts = allocateLotCosts(speciesNames, lot.cost || 0);
-    state.crateQueue = speciesNames.map((speciesName, index) => ({
+    state.crateQueue = deliveries.map((delivery, index) => ({
       id: `${lot.id}-plant-${index}`,
-      speciesId: speciesOfName(speciesName).id,
-      speciesName,
+      speciesId: delivery.speciesId || speciesOfName(delivery.speciesName).id,
+      speciesName: delivery.speciesName,
       seed: state.day * 1009 + index * 131 + lot.id.length * 17,
-      condition: lot.condition || "healthy",
+      condition: delivery.condition || "healthy",
       acquisitionCost: acquisitionCosts[index] || 0,
       status: "boxed",
     }));
@@ -2516,8 +2573,13 @@ document.addEventListener("DOMContentLoaded", () => {
     state.benchState = {
       ...migrateBenchState(state.benchState),
       slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+      rehabilitationSlotCount: state.upgrades.rehabilitationRack
+        ? REHABILITATION_UPGRADE_SLOTS
+        : REHABILITATION_BASE_SLOTS,
     };
     const jobs = state.benchState.jobs || [];
+    const rehabilitationJobs = jobs.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE);
+    const careBenchJobs = jobs.filter((job) => job.type !== BENCH_JOB_TYPES.REHABILITATE);
     const availablePlants = state.inventory.filter((plant) => !plant.benchStatus);
     if (!availablePlants.some((plant) => plant.id === run.benchPlantId)) {
       run.benchPlantId = availablePlants[0]?.id || null;
@@ -2536,11 +2598,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const lampCopy = state.upgrades.growLamp
         ? " Grow lamp support is on: more Repot value, longer Rehabilitate protection, and faster Propagate growth."
         : "";
-      ui.benchSummary.textContent = `${phaseGuidance} ${jobs.length}/${state.benchState.slotCount} bench slots are in use. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""}${lampCopy}`;
+      ui.benchSummary.textContent = `${phaseGuidance} Care Bench: ${careBenchJobs.length}/${state.benchState.slotCount} Repot or Propagate places. Recovery Station: ${rehabilitationJobs.length}/${state.benchState.rehabilitationSlotCount} Rehabilitation places. You have ${state.coins} coins and ${state.bloom} Bloom.${reserve ? ` ${reservedCostCopy(reserve)}.` : ""}${lampCopy}`;
     }
     if (ui.benchStatus) {
       ui.benchStatus.textContent = canStartJobs ? run.benchMessage : phaseGuidance;
-      ui.benchStatus.dataset.tone = jobs.length >= state.benchState.slotCount ? "warning" : "";
+      ui.benchStatus.dataset.tone = careBenchJobs.length >= state.benchState.slotCount
+        || rehabilitationJobs.length >= state.benchState.rehabilitationSlotCount
+        ? "warning"
+        : "";
     }
     ui.benchPlants.replaceChildren();
     if (!state.inventory.length) {
@@ -2581,13 +2646,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!jobs.length) {
       const empty = document.createElement("p");
       empty.className = "bench-empty";
-      empty.textContent = `No work in progress. ${state.benchState.slotCount} bench ${state.benchState.slotCount === 1 ? "slot is" : "slots are"} free.`;
+      empty.textContent = `No work in progress. ${state.benchState.slotCount} Care Bench ${state.benchState.slotCount === 1 ? "place is" : "places are"} free. ${state.benchState.rehabilitationSlotCount} Recovery Station places are free.`;
       ui.benchActiveJobs.append(empty);
     }
     jobs.forEach((job) => {
       const card = document.createElement("article");
       card.className = "bench-job";
       card.dataset.state = job.status;
+      card.dataset.workArea = job.type === BENCH_JOB_TYPES.REHABILITATE ? "recovery" : "care-bench";
       const name = document.createElement("strong");
       const plant = state.inventory.find((item) => item.id === job.plantId);
       name.textContent = `${benchJobInfo[job.type]?.name || "Bench job"} · ${plant?.species || "Plant"}`;
@@ -3004,12 +3070,23 @@ document.addEventListener("DOMContentLoaded", () => {
         key: "benchShelf",
         title: "Second bench shelf",
         ownedTitle: "Bench shelf installed",
-        copy: "Runs two care bench jobs at the same time.",
-        ownedCopy: "Two plants can now receive focused care together.",
+        copy: "Runs two Repot or Propagate jobs at the same time.",
+        ownedCopy: "Two Repot or Propagate jobs can now run together.",
         coins: 75,
         bloom: 20,
         objectName: "bench-shelf",
-        message: "The care bench now has room for two jobs.",
+        message: "The Care Bench now has room for two Repot or Propagate jobs.",
+      },
+      {
+        key: "rehabilitationRack",
+        title: "Recovery trolley",
+        ownedTitle: "Recovery trolley installed",
+        copy: "Adds a third Rehabilitation place at the separate Recovery Station.",
+        ownedCopy: "Three nursery-stressed plants can now recover at the same time.",
+        coins: 85,
+        bloom: 22,
+        objectName: "rehabilitation-rack",
+        message: "The Recovery Station now has a third Rehabilitation place.",
       },
       {
         key: "shopSign",
@@ -3335,6 +3412,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (upgrade.key === "benchShelf") {
       state.benchState = { ...migrateBenchState(state.benchState), slotCount: 2 };
     }
+    if (upgrade.key === "rehabilitationRack") {
+      state.benchState = {
+        ...migrateBenchState(state.benchState),
+        rehabilitationSlotCount: REHABILITATION_UPGRADE_SLOTS,
+      };
+    }
     const object = world.getObjectByName(upgrade.objectName);
     if (object) object.visible = true;
     save();
@@ -3364,9 +3447,17 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       state.inventoryCapacity = nextCapacity;
     }
-    if (upgrade.key === "benchShelf" && (state.benchState?.jobs?.length || 0) > CARE_BENCH_BASE_SLOTS) {
+    const savedBenchJobs = migrateBenchState(state.benchState).jobs;
+    const careBenchJobCount = savedBenchJobs.filter((job) => job.type !== BENCH_JOB_TYPES.REHABILITATE).length;
+    const rehabilitationJobCount = savedBenchJobs.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length;
+    if (upgrade.key === "benchShelf" && careBenchJobCount > CARE_BENCH_BASE_SLOTS) {
       sound("error");
-      toast("Wait until only one Care Bench job remains before selling the second shelf.");
+      toast("Wait until only one Repot or Propagate job remains before selling the second shelf.");
+      return;
+    }
+    if (upgrade.key === "rehabilitationRack" && rehabilitationJobCount > REHABILITATION_BASE_SLOTS) {
+      sound("error");
+      toast("Wait until only two Rehabilitation jobs remain before selling the Recovery trolley.");
       return;
     }
     const refund = improvementResaleValue(upgrade);
@@ -3375,6 +3466,12 @@ document.addEventListener("DOMContentLoaded", () => {
     state.bloom += refund.bloom;
     if (upgrade.key === "benchShelf") {
       state.benchState = { ...migrateBenchState(state.benchState), slotCount: CARE_BENCH_BASE_SLOTS };
+    }
+    if (upgrade.key === "rehabilitationRack") {
+      state.benchState = {
+        ...migrateBenchState(state.benchState),
+        rehabilitationSlotCount: REHABILITATION_BASE_SLOTS,
+      };
     }
     const object = world.getObjectByName(upgrade.objectName);
     if (object) object.visible = false;
@@ -3428,11 +3525,11 @@ document.addEventListener("DOMContentLoaded", () => {
       && run.selected.id === "rehabilitation-station";
     if (ui.rehabilitationStationLabel) ui.rehabilitationStationLabel.hidden = !specialistStationSelected;
     if (ui.rehabilitationStationStatus) {
-      const count = state.benchState?.jobs?.filter((job) => (
-        job.type === BENCH_JOB_TYPES.REHABILITATE || job.type === BENCH_JOB_TYPES.PROPAGATE
-      )).length || 0;
+      const rehabilitationCount = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length || 0;
+      const propagationCount = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.PROPAGATE).length || 0;
+      const count = rehabilitationCount + propagationCount;
       ui.rehabilitationStationStatus.textContent = count
-        ? `${count} specialist ${count === 1 ? "job is" : "jobs are"} active here`
+        ? `${rehabilitationCount} in Recovery · ${propagationCount} on the cutting rack`
         : "No recovery or propagation work is active";
     }
   }
@@ -4172,7 +4269,7 @@ document.addEventListener("DOMContentLoaded", () => {
     toast(plant.hydration < 42
       ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
       : lastCarton
-        ? `${plant.species}! Last carton open. The Care Bench is ready for Repot, Rehabilitate, or Propagate work.`
+        ? `${plant.species}! Last carton open. The Care Bench and separate Recovery Station are ready.`
         : `${plant.species}! A little rumpled, fundamentally promising.`);
     updateUi();
   }
@@ -4691,10 +4788,7 @@ document.addEventListener("DOMContentLoaded", () => {
       serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
     });
     const calendar = calendarForDay(state.day);
-    const closingStockTarget = Math.min(
-      state.inventoryCapacity,
-      (state.customers?.length || profile.visitorCount) + profile.choiceBuffer,
-    );
+    const closingStockTarget = Math.min(state.inventoryCapacity, profile.choiceBuffer);
     state.dailyOverstockCost = closingOverstockCost({
       week: calendar.week,
       inventoryCount: state.inventory.length,
@@ -4858,6 +4952,9 @@ document.addEventListener("DOMContentLoaded", () => {
     state.benchState = {
       ...benchMorning.benchState,
       slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
+      rehabilitationSlotCount: state.upgrades.rehabilitationRack
+        ? REHABILITATION_UPGRADE_SLOTS
+        : REHABILITATION_BASE_SLOTS,
     };
     state.inventory = migratePlantHealthInventory(benchMorning.inventory);
     run.benchMessage = benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length
@@ -5104,18 +5201,18 @@ document.addEventListener("DOMContentLoaded", () => {
       disabled = !run.carried;
     } else if (selected?.kind === "station") {
       if (selected.id === "care-bench") {
-        const jobs = state.benchState?.jobs?.length || 0;
+        const jobs = state.benchState?.jobs?.filter((job) => job.type !== BENCH_JOB_TYPES.REHABILITATE).length || 0;
         title = "Care Bench";
         copy = jobs
-          ? `${jobs} active ${jobs === 1 ? "job is" : "jobs are"} using the bench. Open it to check the work or plan the next job.`
-          : "Use this workbench for soil and repotting. Recovery and propagation plants move to the separate specialist station.";
+          ? `${jobs} Repot or Propagate ${jobs === 1 ? "job is" : "jobs are"} using this bench capacity. Propagation plants root on the cutting rack.`
+          : "Use this bench capacity for Repot and Propagate work. Rehabilitation has two separate Recovery Station places.";
         action = "Open Care Bench";
         disabled = false;
       } else if (selected.id === "rehabilitation-station") {
         const specialistJobs = state.benchState?.jobs?.filter((job) => (
           job.type === BENCH_JOB_TYPES.REHABILITATE || job.type === BENCH_JOB_TYPES.PROPAGATE
         )).length || 0;
-        title = "Recovery and Propagation Station";
+        title = "Recovery and Propagation Work Area";
         copy = specialistJobs
           ? `${specialistJobs} specialist ${specialistJobs === 1 ? "job is" : "jobs are"} active here. Recovery plants and new cuttings stay on this separate bench.`
           : "This station clears nursery stress, restores lost sale value, and gives new cuttings a safe place to root.";
