@@ -234,3 +234,12 @@
 - Browser checks covered a fresh Week 2 event, supplier trust display, a two-plant order offer, deposit acceptance, the separate Recovery Station, the owned-improvement list, a Grow Lamp refund, and the removal of its visible model and effect.
 - Hardened full-stock event days with a distinct-plant assignment check. An event is skipped when the same plant would be needed for two visitor notes, so the morning supplier board cannot trap the player with no valid choice.
 - Replaced the expanded supplier catalog's combinatorial search with deterministic requirement-bitmask planning. The old worst QA pass was 964.3 ms. The optimized 300-pass final run had a 10.6 ms worst pass and a 2.06 ms mean.
+
+## 2026-08-13 — Clear order stock and focused shop work areas
+
+- Replaced the large, persistent Rehabilitation Station overlay with a compact station label. It appears only when the player selects the station and stays in the lower-left edge of the game view.
+- Renamed the area to Recovery and Propagation Station. Both Rehabilitate plants and Propagate parent plants now use its two checked workstation positions. Repot plants remain at the main Care Bench.
+- Rebuilt the weekly order stock panel. The order book now lists suitable shop plants inside the dialog. Each row has its own Hold action, a clear daily-demand warning when needed, and a separate Held for collection list with Release actions.
+- Changed the Retail Supply Shelf to show one front-facing item per unit in each standard customer add-on pack. A successful add-on sale updates the 3D shelf at once, so fertilizer, fungicide, and potting-soil stock visibly falls with the saved count.
+- Replaced the long morning forecast paragraph with four labeled cards for Visitors, Plant requests, Shop cost, and Stock plan. The supplier board now fits a 1280×720 browser window without clipping.
+- Browser validation covered the compact station label, a live two-plant weekly order from available stock through completion readiness, a three-to-two fungicide shelf change during a customer sale, and the Week 2 morning supplier layout. All JavaScript, DOM, ARIA, supplier, neighborhood, plant, Care Bench, health, expansion, project, supply, and trade checks passed with no browser console errors.

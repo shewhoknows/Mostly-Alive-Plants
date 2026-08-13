@@ -564,6 +564,12 @@ document.addEventListener("DOMContentLoaded", () => {
     supplierBoard: $("supplier-board"),
     supplierTitle: $("supplier-title"),
     supplierForecast: $("supplier-forecast"),
+    supplierSummaryVisitors: $("supplier-summary-visitors"),
+    supplierSummaryNeeds: $("supplier-summary-needs"),
+    supplierSummaryCost: $("supplier-summary-cost"),
+    supplierSummaryDebt: $("supplier-summary-debt"),
+    supplierSummaryCoverage: $("supplier-summary-coverage"),
+    supplierSummaryPressure: $("supplier-summary-pressure"),
     supplierStatus: $("supplier-status"),
     supplierOptions: $("supplier-options"),
     supplierRelationshipLevel: $("supplier-relationship-level"),
@@ -586,8 +592,8 @@ document.addEventListener("DOMContentLoaded", () => {
     weeklyOrderProgressCopy: $("weekly-order-progress-copy"),
     weeklyOrderDeadlineChip: $("weekly-order-deadline-chip"),
     weeklyOrderProgress: $("weekly-order-progress"),
+    weeklyOrderAvailableList: $("weekly-order-available-list"),
     weeklyOrderHeldList: $("weekly-order-held-list"),
-    holdSelectedPlant: $("hold-selected-plant"),
     completeWeeklyOrder: $("complete-weekly-order"),
     rehabilitationStationLabel: $("rehabilitation-station-label"),
     rehabilitationStationStatus: $("rehabilitation-station-status"),
@@ -1342,7 +1348,7 @@ document.addEventListener("DOMContentLoaded", () => {
     root.add(inspectionLamp);
     const label = new THREE.Mesh(
       new THREE.PlaneGeometry(1.58, 0.5),
-      material(0xf0e6cc, { map: textTexture("PLANT REHAB", "RECOVERY STATION") }),
+      material(0xf0e6cc, { map: textTexture("RECOVERY + PROP", "SPECIALIST STATION") }),
     );
     label.position.set(0, 2.9, -0.25);
     root.add(label);
@@ -1351,7 +1357,7 @@ document.addEventListener("DOMContentLoaded", () => {
     root.name = "rehabilitation-station";
     registerStation(root, {
       id: "rehabilitation-station",
-      label: "Plant Rehabilitation Station",
+      label: "Recovery and Propagation Station",
       ringScale: 1.5,
       selectionAnchor: new THREE.Vector3(0, 1.06, 0),
     });
@@ -1418,12 +1424,14 @@ document.addEventListener("DOMContentLoaded", () => {
       root.add(visual);
       return trackStockVisual(itemId, visual);
     };
-    addBag("potting-soil", -1.04, 0.42, 0xb69264, 1.1);
-    addBag("potting-soil", -0.58, 0.42, 0xd1ad6b, 1.1);
-    addBag("potting-soil", -0.16, 0.4, 0x9aac82, 0.94);
-    addBottle("fungicide", -1.02, 1.16, bottleGlass);
-    addBottle("neem-spray", -0.64, 1.16, amber);
-    addBottle("fungicide", -0.24, 1.16, bottleGlass);
+    addBag("potting-soil", -1.08, 0.4, 0xb69264, 0.9);
+    addBag("potting-soil", -0.72, 0.4, 0xd1ad6b, 0.9);
+    addBag("potting-soil", -0.36, 0.4, 0x9aac82, 0.82);
+    addBag("potting-soil", -0.04, 0.4, 0xb69264, 0.78);
+    addBottle("fungicide", -1.08, 1.12, bottleGlass);
+    addBottle("fungicide", -0.72, 1.12, bottleGlass);
+    addBottle("fungicide", -0.36, 1.12, bottleGlass);
+    addBottle("neem-spray", -0.14, 1.4, amber);
     [-1.04, -0.58, -0.14].forEach((x, index) => {
       addBag("fertilizer", x, 2.01, index === 0 ? 0xe0c16e : index === 1 ? 0x789486 : 0xc4866b, 0.78);
     });
@@ -1459,9 +1467,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const count = itemId === "clip-grow-light"
         ? availableClipGrowLightCount(supplyState)
         : supplyState.stock[itemId] || 0;
-      const visibleCount = count > 0
-        ? Math.max(1, Math.ceil((count / item.maxStock) * objects.length))
-        : 0;
+      const visibleCount = Math.min(count, objects.length);
       objects.forEach((object, index) => {
         object.visible = index < visibleCount;
       });
@@ -1906,21 +1912,21 @@ document.addEventListener("DOMContentLoaded", () => {
     plantObjects.clear();
     let loose = 0;
     let benchJob = 0;
-    let rehabilitationJob = 0;
+    let specialistJob = 0;
     state.inventory.forEach((plant) => {
       const object = createPlant(plant);
       if (plant.benchStatus) {
-        const isRehabilitation = plant.benchStatus.type === BENCH_JOB_TYPES.REHABILITATE;
-        const positions = isRehabilitation ? rehabilitationJobStaging : benchJobStaging;
-        const index = isRehabilitation ? rehabilitationJob : benchJob;
+        const isSpecialistJob = [BENCH_JOB_TYPES.REHABILITATE, BENCH_JOB_TYPES.PROPAGATE].includes(plant.benchStatus.type);
+        const positions = isSpecialistJob ? rehabilitationJobStaging : benchJobStaging;
+        const index = isSpecialistJob ? specialistJob : benchJob;
         const position = positions[Math.min(index, positions.length - 1)];
         object.position.copy(position);
-        object.scale.setScalar(isRehabilitation
+        object.scale.setScalar(isSpecialistJob
           ? Math.min(object.userData.looseScale || 0.78, 0.46)
           : index === 0
             ? Math.min(object.userData.looseScale || 0.78, 0.7)
             : Math.min(object.userData.looseScale || 0.78, 0.55));
-        if (isRehabilitation) rehabilitationJob += 1;
+        if (isSpecialistJob) specialistJob += 1;
         else benchJob += 1;
       } else if (Number.isInteger(plant.slot) && slotIsActive(SLOT_DATA[plant.slot])) {
         const slot = SLOT_DATA[plant.slot];
@@ -2076,7 +2082,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.closeWeeklyOrder?.addEventListener("click", () => openModal(ui.weeklyOrderModal, false));
     ui.acceptWeeklyOrder?.addEventListener("click", acceptCurrentWeeklyOrder);
     ui.declineWeeklyOrder?.addEventListener("click", declineCurrentWeeklyOrder);
-    ui.holdSelectedPlant?.addEventListener("click", holdSelectedPlantForOrder);
     ui.completeWeeklyOrder?.addEventListener("click", completeCurrentWeeklyOrder);
     ui.helpButton?.addEventListener("click", () => openModal(ui.helpModal, true));
     ui.closeHelp?.addEventListener("click", () => openModal(ui.helpModal, false));
@@ -2169,11 +2174,26 @@ document.addEventListener("DOMContentLoaded", () => {
         visitorBonus: state.upgrades.shopSign ? 1 : 0,
         serviceableCapacity: sellablePotential(state.inventory, state.inventoryCapacity),
       });
-      const debtCopy = state.outstandingCosts ? ` ${coinCopy(state.outstandingCosts)} are still due.` : "";
-      const overstockCopy = calendar.week >= 4
-        ? " Stock above the closing target uses 2 extra coins per plant."
-        : "";
-      ui.supplierForecast.textContent = `${state.customers.length} visitors need ${needs.join(", ")}. Today’s shop cost is ${coinCopy(state.dailyOperatingCost)}.${debtCopy}${overstockCopy} ${trade.pressureCopy}`;
+      const coverageLabels = {
+        empty: "Start today’s stock",
+        shortage: "More sale stock needed",
+        thin: "Enough stock, small choice",
+        balanced: "Stock is balanced",
+        overstock: "Sell carry-over stock",
+        full: "Shelves are full",
+      };
+      if (ui.supplierSummaryVisitors) ui.supplierSummaryVisitors.textContent = `${state.customers.length} today`;
+      if (ui.supplierSummaryNeeds) ui.supplierSummaryNeeds.textContent = needs.length ? needs.join(" · ") : "No open requests";
+      if (ui.supplierSummaryCost) ui.supplierSummaryCost.textContent = coinCopy(state.dailyOperatingCost);
+      if (ui.supplierSummaryDebt) {
+        ui.supplierSummaryDebt.textContent = state.outstandingCosts
+          ? `${coinCopy(state.outstandingCosts)} from earlier days is also due`
+          : calendar.week >= 4
+            ? "Overstock costs 2 coins per plant at closing"
+            : "No old costs are due";
+      }
+      if (ui.supplierSummaryCoverage) ui.supplierSummaryCoverage.textContent = coverageLabels[trade.stockPressure] || "Review today’s stock";
+      if (ui.supplierSummaryPressure) ui.supplierSummaryPressure.textContent = trade.pressureCopy;
     }
     if (ui.supplierStatus) {
       const newPlants = SPECIES.filter((species) => species.unlockWeek === calendar.week).map((species) => species.name);
@@ -3403,17 +3423,22 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.weeklyOrderButton.disabled = !order;
       ui.weeklyOrderButton.classList.toggle("is-active", order?.status === ORDER_STATUS.ACTIVE);
     }
-    if (ui.rehabilitationStationLabel) ui.rehabilitationStationLabel.hidden = !run.started;
+    const specialistStationSelected = run.started
+      && run.selected?.kind === "station"
+      && run.selected.id === "rehabilitation-station";
+    if (ui.rehabilitationStationLabel) ui.rehabilitationStationLabel.hidden = !specialistStationSelected;
     if (ui.rehabilitationStationStatus) {
-      const count = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length || 0;
+      const count = state.benchState?.jobs?.filter((job) => (
+        job.type === BENCH_JOB_TYPES.REHABILITATE || job.type === BENCH_JOB_TYPES.PROPAGATE
+      )).length || 0;
       ui.rehabilitationStationStatus.textContent = count
-        ? `${count} ${count === 1 ? "plant is" : "plants are"} in recovery`
-        : "Long-stay and rescue plant care";
+        ? `${count} specialist ${count === 1 ? "job is" : "jobs are"} active here`
+        : "No recovery or propagation work is active";
     }
   }
 
   function renderWeeklyOrder() {
-    if (!ui.weeklyOrderHeldList) return;
+    if (!ui.weeklyOrderHeldList || !ui.weeklyOrderAvailableList) return;
     renderWeeklyPlan();
     const order = state.neighborhoodState.order;
     const heldIds = new Set(order?.heldPlantIds || []);
@@ -3454,6 +3479,58 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.weeklyOrderDeadlineChip.textContent = order ? `${Math.max(0, daysLeft)} ${Math.abs(daysLeft) === 1 ? "day" : "days"} left` : "No order";
       ui.weeklyOrderDeadlineChip.classList.toggle("is-urgent", Boolean(order && daysLeft <= 1 && status === ORDER_STATUS.ACTIVE));
     }
+    ui.weeklyOrderAvailableList.replaceChildren();
+    const baseCandidates = status === ORDER_STATUS.ACTIVE
+      ? state.inventory
+        .filter((plant) => !heldIds.has(plant.id))
+        .map((plant) => ({
+          plant,
+          base: validateOrderPlant({ state: state.neighborhoodState, plant, day: state.day }),
+        }))
+        .filter(({ base }) => base.ok)
+      : [];
+    if (!baseCandidates.length) {
+      const empty = document.createElement("p");
+      empty.className = "held-stock-empty";
+      empty.textContent = status === ORDER_STATUS.OFFERED
+        ? "Accept the offer to see matching shop plants."
+        : status === ORDER_STATUS.ACTIVE && heldCount >= (order?.quantity || 1)
+          ? "Enough plants are held for this order."
+          : status === ORDER_STATUS.ACTIVE
+            ? `No ready ${order?.requiredTrait || "matching"} plants are available. Care for one or find one in a delivery.`
+            : status === ORDER_STATUS.COMPLETED
+              ? "This order was collected."
+              : "There is no active stock request.";
+      ui.weeklyOrderAvailableList.append(empty);
+    }
+    baseCandidates.forEach(({ plant }) => {
+      const validation = weeklyOrderPlantValidation(plant);
+      const row = document.createElement("article");
+      row.className = "held-stock-item order-available-item";
+      const copy = document.createElement("div");
+      copy.className = "held-stock-item-copy";
+      const name = document.createElement("strong");
+      name.textContent = plant.species;
+      const detail = document.createElement("small");
+      const condition = conditionOf(plant);
+      detail.textContent = `${plant.traits.join(" · ")} · ${condition.label}`;
+      copy.append(name, detail);
+      if (!validation.ok) {
+        const reason = document.createElement("small");
+        reason.className = "order-stock-reason";
+        reason.textContent = validation.message;
+        copy.append(reason);
+      }
+      const hold = document.createElement("button");
+      hold.type = "button";
+      hold.className = "button order-hold-button";
+      hold.textContent = validation.ok ? "Hold" : "Needed today";
+      hold.setAttribute("aria-disabled", String(!validation.ok));
+      hold.addEventListener("click", () => holdPlantForWeeklyOrder(plant.id));
+      row.append(copy, hold);
+      ui.weeklyOrderAvailableList.append(row);
+    });
+
     ui.weeklyOrderHeldList.replaceChildren();
     if (!heldPlants.length) {
       const empty = document.createElement("p");
@@ -3466,7 +3543,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? "The deadline passed. All held stock was released."
             : status === ORDER_STATUS.OFFERED
               ? "Accept the offer before you reserve any stock."
-              : "Choose a suitable shop plant, then hold it for this order.";
+              : "No plants are held yet. Choose one from Available matches.";
       ui.weeklyOrderHeldList.append(empty);
     }
     heldPlants.forEach((plant) => {
@@ -3488,14 +3565,6 @@ document.addEventListener("DOMContentLoaded", () => {
       row.append(copy, release);
       ui.weeklyOrderHeldList.append(row);
     });
-    const selectedPlant = run.selected?.kind === "plant" ? state.inventory.find((plant) => plant.id === run.selected.id) : null;
-    const validation = validateOrderPlant({ state: state.neighborhoodState, plant: selectedPlant, day: state.day });
-    if (ui.holdSelectedPlant) {
-      ui.holdSelectedPlant.hidden = status !== ORDER_STATUS.ACTIVE;
-      ui.holdSelectedPlant.disabled = !validation.ok;
-      ui.holdSelectedPlant.textContent = validation.ok ? `Hold ${selectedPlant.species}` : "Hold selected plant";
-      ui.holdSelectedPlant.title = validation.message;
-    }
     if (ui.completeWeeklyOrder) {
       ui.completeWeeklyOrder.disabled = status !== ORDER_STATUS.ACTIVE || heldCount < (order?.quantity || 1);
       ui.completeWeeklyOrder.textContent = status === ORDER_STATUS.COMPLETED ? "Order collected ✓" : "Complete order";
@@ -3539,11 +3608,36 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
-  function holdSelectedPlantForOrder() {
-    const plant = run.selected?.kind === "plant" ? state.inventory.find((item) => item.id === run.selected.id) : null;
+  function weeklyOrderPlantValidation(plant) {
     if (state.phase === "supply" || state.crates > 0 || run.crateAnimation) {
+      return {
+        ok: false,
+        code: "shipment-first",
+        message: "Choose and unpack today’s shipment before you reserve weekly-order stock.",
+      };
+    }
+    const result = holdPlantForOrder({ state: state.neighborhoodState, plant, day: state.day });
+    if (!result.ok) return result;
+    const remainingCustomers = state.phase === "open"
+      ? state.customers.slice(state.customerIndex)
+      : state.customers;
+    const afterHold = state.inventory.map((item) => item.id === plant.id ? { ...item, held: true } : item);
+    if (!inventoryCoversCustomers(afterHold, remainingCustomers)) {
+      return {
+        ok: false,
+        code: "needed-today",
+        message: `${plant.species} is still needed for today’s visitor notes. Hold another ${result.state.order.requiredTrait} plant.`,
+      };
+    }
+    return result;
+  }
+
+  function holdPlantForWeeklyOrder(plantId) {
+    const plant = state.inventory.find((item) => item.id === plantId);
+    const validation = weeklyOrderPlantValidation(plant);
+    if (!validation.ok) {
       sound("error");
-      toast("Choose and unpack today's shipment before you reserve weekly-order stock.");
+      toast(validation.message);
       return;
     }
     const result = holdPlantForOrder({ state: state.neighborhoodState, plant, day: state.day });
@@ -3552,17 +3646,8 @@ document.addEventListener("DOMContentLoaded", () => {
       toast(result.message);
       return;
     }
-    const remainingCustomers = state.phase === "open"
-      ? state.customers.slice(state.customerIndex)
-      : state.customers;
-    const afterHold = state.inventory.map((item) => item.id === plant.id ? { ...item, held: true } : item);
-    if (!inventoryCoversCustomers(afterHold, remainingCustomers)) {
-      sound("error");
-      toast(`${plant.species} is still needed for today's visitor notes. Hold another ${result.state.order.requiredTrait} plant.`);
-      return;
-    }
     state.neighborhoodState = result.state;
-    if (plant) plant.held = true;
+    plant.held = true;
     save();
     sound("upgrade");
     toast(result.message);
@@ -4385,7 +4470,10 @@ document.addEventListener("DOMContentLoaded", () => {
       state.supplyState = addOnSale.supplyState;
       state.coins = addOnSale.coins;
     }
-    if (addOnSale?.addOnSold) state.dailySupplySales = (Number(state.dailySupplySales) || 0) + 1;
+    if (addOnSale?.addOnSold) {
+      state.dailySupplySales = (Number(state.dailySupplySales) || 0) + 1;
+      updateRetailSupplyShelfStock();
+    }
     const addOnRevenue = addOnSale?.addOnSold ? addOnSale.revenue : 0;
     const addOnCostOfGoods = addOnSale?.addOnSold ? addOnSale.costOfGoods : 0;
     const saleRevenue = payout + addOnRevenue;
@@ -5020,16 +5108,18 @@ document.addEventListener("DOMContentLoaded", () => {
         title = "Care Bench";
         copy = jobs
           ? `${jobs} active ${jobs === 1 ? "job is" : "jobs are"} using the bench. Open it to check the work or plan the next job.`
-          : "Repot cramped roots, clear nursery stress and restore rescue value, or propagate a thriving plant during morning preparation.";
+          : "Use this workbench for soil and repotting. Recovery and propagation plants move to the separate specialist station.";
         action = "Open Care Bench";
         disabled = false;
       } else if (selected.id === "rehabilitation-station") {
-        const rehabilitationJobs = state.benchState?.jobs?.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length || 0;
-        title = "Plant Rehabilitation Station";
-        copy = rehabilitationJobs
-          ? `${rehabilitationJobs} recovery ${rehabilitationJobs === 1 ? "job is" : "jobs are"} active here. Nursery-stressed plants recover at this separate workstation.`
-          : "This marked recovery station clears nursery stress and restores lost sale value. Water, mist, and pruning cannot replace rehabilitation.";
-        action = "Open Rehabilitation Jobs";
+        const specialistJobs = state.benchState?.jobs?.filter((job) => (
+          job.type === BENCH_JOB_TYPES.REHABILITATE || job.type === BENCH_JOB_TYPES.PROPAGATE
+        )).length || 0;
+        title = "Recovery and Propagation Station";
+        copy = specialistJobs
+          ? `${specialistJobs} specialist ${specialistJobs === 1 ? "job is" : "jobs are"} active here. Recovery plants and new cuttings stay on this separate bench.`
+          : "This station clears nursery stress, restores lost sale value, and gives new cuttings a safe place to root.";
+        action = "Open Specialist Jobs";
         disabled = false;
       } else if (selected.id === "watering-can") {
         const target = stationTargetPlant();

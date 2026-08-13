@@ -40,7 +40,7 @@ The separate physical Retail Supply Shelf sells reusable Clip Grow Lights, Gentl
 
 The shop sits inside a small neighborhood diorama. The desktop view includes a pavement, curb, road markings, public planters, a street tree, and gentle greenery movement. Reduced-motion mode keeps the exterior still.
 
-The Recovery Station is separate from the main Care Bench. It has its own sign, light, glass screen, two recovery positions, and a status badge. Rehabilitate jobs appear there. Repot and Propagate work stays at the main Care Bench.
+The Recovery and Propagation Station is separate from the main Care Bench. It has its own sign, light, glass screen, and two specialist plant positions. Rehabilitate plants and Propagate parent plants stay there. Repot work stays at the main Care Bench. Its small room label appears only when the station is selected.
 
 The **Owned improvements** section lets you remove a purchased visible fixture. You receive half of its coin cost. Bloom is not returned, and the effect stops at once. Capacity fixtures cannot be removed when plants or unopened cartons need their space. The Bench Shelf cannot be removed while its second job slot is in use.
 

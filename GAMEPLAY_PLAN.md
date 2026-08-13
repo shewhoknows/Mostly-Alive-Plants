@@ -33,7 +33,7 @@ The commerce-and-neighborhood slice from this plan and the attached 35-day campa
 - a physical Retail Supply Shelf with reusable Clip Grow Lights, fertilizer, issue treatments, potting soil, and optional customer add-ons;
 - five utility fixtures plus six permanent shop expansions with visible 3D objects and sale, supplier, or capacity effects;
 - a persistent main-panel Care Bench entry that shows timing, readiness, and active jobs;
-- a separate marked Recovery Station for Rehabilitate jobs;
+- a separate marked Recovery and Propagation Station for Rehabilitate and Propagate jobs;
 - one optional weekly order, Held stock, small neighborhood events, exact return visits, and nursery relationship levels;
 - safe resale of visible shop improvements for half of their coin cost;
 - Bloom reputation standings and migration of older saves into version 8.

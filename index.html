@@ -193,9 +193,9 @@
       >
         <span class="station-identifier-mark" aria-hidden="true">✚</span>
         <span class="station-identifier-copy">
-          <span>Separate care area</span>
-          <strong>Rehabilitation Station</strong>
-          <small id="rehabilitation-station-status">Long-stay and rescue plant care</small>
+          <span>Specialist plant care</span>
+          <strong>Recovery + Propagation</strong>
+          <small id="rehabilitation-station-status">Select the station to open its work list</small>
         </span>
       </aside>
 
@@ -273,9 +273,26 @@
         <span class="clipboard-clip" aria-hidden="true"></span>
         <p class="panel-kicker">Morning nursery run</p>
         <h2 id="supplier-title">Choose today’s plant lot</h2>
-        <p id="supplier-forecast" class="supplier-forecast">
-          Check the neighborhood forecast, then choose one delivery for the shop.
-        </p>
+        <div id="supplier-forecast" class="supplier-forecast" aria-label="Opening day summary">
+          <div class="supplier-summary-item">
+            <span>Visitors</span>
+            <strong id="supplier-summary-visitors">3 today</strong>
+          </div>
+          <div class="supplier-summary-item supplier-summary-needs">
+            <span>Plant requests</span>
+            <strong id="supplier-summary-needs">Check today’s notes</strong>
+          </div>
+          <div class="supplier-summary-item">
+            <span>Shop cost</span>
+            <strong id="supplier-summary-cost">0 coins</strong>
+            <small id="supplier-summary-debt">No old costs due</small>
+          </div>
+          <div class="supplier-summary-item">
+            <span>Stock plan</span>
+            <strong id="supplier-summary-coverage">Choose a delivery</strong>
+            <small id="supplier-summary-pressure">Unsold plants stay in stock</small>
+          </div>
+        </div>
         <p id="supplier-status" class="supplier-status" role="status" aria-live="polite">
           Each lot has its own cost, condition, and assortment.
         </p>
@@ -455,7 +472,7 @@
           <section class="weekly-order-section held-stock-panel" aria-labelledby="held-stock-title">
             <div class="weekly-order-section-heading">
               <div>
-                <h3 id="held-stock-title">Held stock</h3>
+                <h3 id="held-stock-title">Order stock</h3>
                 <p id="weekly-order-progress-copy">No plants are held.</p>
               </div>
               <span id="weekly-order-deadline-chip" class="order-deadline-chip">Due Friday</span>
@@ -467,14 +484,30 @@
               value="0"
               aria-label="Weekly order plant progress"
             ></progress>
-            <div id="weekly-order-held-list" class="held-stock-list" aria-live="polite">
-              <p class="held-stock-empty">Choose a suitable shop plant, then hold it for this order.</p>
+            <div class="order-stock-columns">
+              <section class="order-stock-group" aria-labelledby="weekly-order-available-title">
+                <div class="order-stock-group-heading">
+                  <h4 id="weekly-order-available-title">Available matches</h4>
+                  <span>Choose here</span>
+                </div>
+                <div id="weekly-order-available-list" class="held-stock-list order-available-list" aria-live="polite">
+                  <p class="held-stock-empty">Accept the order to see suitable plants.</p>
+                </div>
+              </section>
+              <section class="order-stock-group" aria-labelledby="weekly-order-held-title">
+                <div class="order-stock-group-heading">
+                  <h4 id="weekly-order-held-title">Held for collection</h4>
+                  <span>Reserved</span>
+                </div>
+                <div id="weekly-order-held-list" class="held-stock-list" aria-live="polite">
+                  <p class="held-stock-empty">No plants are held.</p>
+                </div>
+              </section>
             </div>
             <div id="weekly-order-held-actions" class="held-stock-actions" role="group" aria-label="Weekly order stock actions">
-              <button id="hold-selected-plant" class="button button-primary" type="button" disabled>Hold selected plant</button>
               <button id="complete-weekly-order" class="button button-quiet" type="button" disabled>Complete order</button>
             </div>
-            <p class="held-stock-note">Held plants stay in the shop, but regular customers cannot buy them. You can release them before collection.</p>
+            <p class="held-stock-note">Choose a matching plant in this book. Held plants stay in the shop, but regular customers cannot buy them. You can release them before collection.</p>
           </section>
         </div>
       </div>
