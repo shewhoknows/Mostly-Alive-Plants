@@ -495,6 +495,10 @@ document.addEventListener("DOMContentLoaded", () => {
     start: $("start-game") || document.querySelector(".primary-button"),
     startLabel: $("start-game-label"),
     titleSaveDay: $("title-save-day"),
+    resetGame: $("reset-game"),
+    resetGameConfirm: $("reset-game-confirm"),
+    confirmResetGame: $("confirm-reset-game"),
+    cancelResetGame: $("cancel-reset-game"),
     loading: $("loading-progress") || $("status"),
     game: $("game-ui"),
     day: $("topbar-day"),
@@ -630,7 +634,13 @@ document.addEventListener("DOMContentLoaded", () => {
     orientation: $("orientation-hint"),
   };
 
+  let hasStoredSave = false;
+  try {
+    const storedSave = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    hasStoredSave = Boolean(storedSave && Array.isArray(storedSave.inventory));
+  } catch { /* invalid saves already fall back to a fresh shop */ }
   const state = loadState();
+  let discardSave = false;
 
   function hasExpansion(id) {
     return Boolean(state.expansionState?.purchased?.[id]);
@@ -769,14 +779,14 @@ document.addEventListener("DOMContentLoaded", () => {
   setupDay();
   const titleCalendar = calendarForDay(state.day);
   if (ui.titleSaveDay) ui.titleSaveDay.textContent = `${titleCalendar.weekday} · Day ${String(state.day).padStart(2, "0")}`;
-  if (ui.startLabel && (state.day > 1 || state.inventory.length || state.phase !== "supply")) {
-    ui.startLabel.textContent = `Continue Day ${state.day}`;
-  }
+  if (ui.startLabel) ui.startLabel.textContent = hasStoredSave ? `Continue Day ${state.day}` : "Start the day";
+  if (ui.resetGame) ui.resetGame.hidden = !hasStoredSave;
   bindUi();
   resize();
   loadShop();
 
   function save() {
+    if (discardSave) return;
     state.version = SAVE_VERSION;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode */ }
   }
@@ -2143,6 +2153,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function bindUi() {
     ui.start?.addEventListener("click", startGame);
+    ui.resetGame?.addEventListener("click", () => {
+      ui.resetGame.hidden = true;
+      ui.resetGameConfirm.hidden = false;
+      ui.confirmResetGame?.focus();
+    });
+    ui.cancelResetGame?.addEventListener("click", () => {
+      ui.resetGameConfirm.hidden = true;
+      ui.resetGame.hidden = false;
+      ui.resetGame.focus();
+    });
+    ui.confirmResetGame?.addEventListener("click", () => {
+      discardSave = true;
+      try { localStorage.removeItem(STORAGE_KEY); } catch { /* private mode */ }
+      window.location.reload();
+    });
     ui.action?.addEventListener("click", doAction);
     ui.openShop?.addEventListener("click", openShop);
     ui.openAllCartons?.addEventListener("click", unpackAllCartons);

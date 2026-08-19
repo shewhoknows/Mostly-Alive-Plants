@@ -50,6 +50,14 @@
           <span id="start-game-label">Start the day</span>
           <span aria-hidden="true">↗</span>
         </button>
+        <div class="title-reset-controls">
+          <button id="reset-game" class="title-reset-button" type="button" hidden>Start over</button>
+          <div id="reset-game-confirm" class="title-reset-confirm" role="group" aria-label="Confirm new game" hidden>
+            <span>This deletes this browser’s saved shop.</span>
+            <button id="confirm-reset-game" type="button">Delete save and start Day 1</button>
+            <button id="cancel-reset-game" type="button">Keep my save</button>
+          </div>
+        </div>
         <div class="loading-line" aria-hidden="true"><span id="loading-progress"></span></div>
         <p class="loading-copy">Growing the shop…</p>
         <div class="title-notes" aria-label="Game qualities">

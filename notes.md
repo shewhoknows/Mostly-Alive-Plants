@@ -268,3 +268,8 @@
 - Added `daily-flow-system.js` and direct QA for batch unlock timing, plant-first target order, empty-slot exclusion, readiness blockers, Quick-only rescue stock, weekly-order Holds, and current-customer mismatches. Supplier QA now checks novelty and minimum variety against repeated carry-over stock.
 - The economy model was not duplicated. Existing operating costs, overstock care, repeatable bench spend, permanent improvements, and weekly projects remain the active sinks. The next black-box test must remeasure Days 1, 5, 10, 15, and 20 before any new cost is added.
 - Final validation passed all 11 QA suites, JavaScript syntax checks, DOM and ARIA checks, whitespace checks, and a live 1280×720 browser run. The browser test covered a saved Day 4 title, a complete Day 4–5 sale flow, plant-first selection without empty slots, a live Quick-only health state changing after care, seven-species Day 6 supplier choices, the seven-carton batch animation and overview, the selected-plant layout, and a clean console.
+
+## 2026-08-19 — Safe new-game control
+
+- Added **Start over** to the title screen when a valid browser save exists. It opens a clear confirmation step, deletes only the `Mostly Alive Plants` save, and reloads a fresh Day 1 shop.
+- Corrected the fresh title state. A browser with no saved game now says **Start the day** even though the new shop already contains its two starter plants.

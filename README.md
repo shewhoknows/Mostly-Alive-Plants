@@ -12,6 +12,8 @@ python3 -m http.server 4173
 
 Then visit `http://127.0.0.1:4173/`.
 
+The title screen shows **Start over** when this browser has a saved shop. It asks for confirmation, deletes only this game’s save, and reloads a fresh Day 1 shop.
+
 ### Controls
 
 - Mouse/touch: tap an object, use the large contextual action, drag to pan, and wheel/pinch to zoom.

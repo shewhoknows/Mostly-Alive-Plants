@@ -215,6 +215,41 @@ h1 span {
   min-width: 15.5rem;
 }
 
+.title-reset-controls {
+  display: grid;
+  min-height: 1.6rem;
+  margin: 0.75rem auto -0.5rem;
+  place-items: center;
+}
+
+.title-reset-button,
+.title-reset-confirm button {
+  border: 0;
+  color: rgba(32, 58, 44, 0.72);
+  background: transparent;
+  font-size: 0.61rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+  cursor: pointer;
+}
+
+.title-reset-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 31rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem 0.8rem;
+  color: rgba(32, 58, 44, 0.72);
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+
+.title-reset-confirm #confirm-reset-game {
+  color: #8a4d40;
+  font-weight: 700;
+}
+
 .loading-line {
   width: min(15.5rem, 70vw);
   height: 3px;
