@@ -1,13 +1,36 @@
 export const BATCH_UNPACK_START_DAY = 6;
+export const CARE_BLOOM_DAILY_CAP = 3;
+export const PERFECT_DAY_BLOOM_REWARD = 3;
+export const DISPLAY_GOAL_REWARD = Object.freeze({ coins: 4, bloom: 1 });
 
 const QUICK_ONLY_CONDITIONS = new Set([
   "drooping",
   "nursery-stressed",
+  "long-stay-stressed",
   "root-bound",
   "light-stressed",
   "mite-infested",
   "fungal",
 ]);
+
+export function careBloomReward(earnedToday = 0) {
+  return Math.max(0, Math.floor(Number(earnedToday) || 0)) < CARE_BLOOM_DAILY_CAP ? 1 : 0;
+}
+
+export function saleBloomReward(extras = 0) {
+  const safeExtras = Math.max(0, Math.min(3, Math.floor(Number(extras) || 0)));
+  return 1 + Math.floor(safeExtras / 2);
+}
+
+export function perfectDayBloomReward({ perfects = 0, visitorCount = 0, completedSales = 0, alreadyPaid = false } = {}) {
+  const visitors = Math.max(0, Math.floor(Number(visitorCount) || 0));
+  return !alreadyPaid
+    && visitors > 0
+    && Math.floor(Number(completedSales) || 0) === visitors
+    && Math.floor(Number(perfects) || 0) === visitors
+    ? PERFECT_DAY_BLOOM_REWARD
+    : 0;
+}
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];

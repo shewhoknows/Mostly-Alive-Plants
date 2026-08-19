@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 
 import {
   BATCH_UNPACK_START_DAY,
+  CARE_BLOOM_DAILY_CAP,
+  DISPLAY_GOAL_REWARD,
+  PERFECT_DAY_BLOOM_REWARD,
   canBatchUnpack,
+  careBloomReward,
+  perfectDayBloomReward,
   plantSaleReadiness,
+  saleBloomReward,
   sortKeyboardTargets,
 } from "./daily-flow-system.js";
 
@@ -21,6 +27,15 @@ assert.equal(BATCH_UNPACK_START_DAY, 6);
 assert.equal(canBatchUnpack({ day: 5, crates: 6 }), false);
 assert.equal(canBatchUnpack({ day: 6, crates: 1 }), false);
 assert.equal(canBatchUnpack({ day: 6, crates: 2 }), true);
+assert.equal(CARE_BLOOM_DAILY_CAP, 3);
+assert.deepEqual(DISPLAY_GOAL_REWARD, { coins: 4, bloom: 1 });
+assert.equal(careBloomReward(0), 1);
+assert.equal(careBloomReward(2), 1);
+assert.equal(careBloomReward(3), 0);
+assert.deepEqual([0, 1, 2, 3].map(saleBloomReward), [1, 1, 2, 2]);
+assert.equal(perfectDayBloomReward({ perfects: 4, visitorCount: 4, completedSales: 4 }), PERFECT_DAY_BLOOM_REWARD);
+assert.equal(perfectDayBloomReward({ perfects: 3, visitorCount: 4, completedSales: 4 }), 0);
+assert.equal(perfectDayBloomReward({ perfects: 4, visitorCount: 4, completedSales: 4, alreadyPaid: true }), 0);
 
 const targets = [
   { entity: { kind: "station", id: "watering-can" } },

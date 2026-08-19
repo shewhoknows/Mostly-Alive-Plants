@@ -4,6 +4,7 @@ import {
   HEALTH_ISSUE_INTERVAL_DAYS,
   HEALTH_ISSUE_START_DAY,
   ISSUE_TREATMENTS,
+  LONG_STAY_VALUE_LOSS,
   MAX_GROWTH_POINTS,
   MAX_NEW_ISSUES_PER_MORNING,
   PLANT_HEALTH_STATE_VERSION,
@@ -48,6 +49,7 @@ assert.equal(migrated.plantHealthVersion, PLANT_HEALTH_STATE_VERSION);
 assert.equal(migrated.customField, "keep-me");
 assert.equal(migrated.nurseryAgeDays, 0);
 assert.equal(migrated.needsRehabilitation, false);
+assert.equal(migrated.rehabilitationReason, null);
 assert.equal(migrated.healthIssue, null);
 assert.equal(migrated.healthIssueDay, null);
 assert.equal(migrated.healthIssueAgeDays, 0);
@@ -56,9 +58,11 @@ assert.equal(migrated.growthPoints, 0);
 assert.equal(migrated.clipGrowLightAssigned, false);
 assert.deepEqual(migratePlantHealthInventory([old]).map((entry) => entry.id), ["old-save"]);
 assert.deepEqual(migratePlantHealthInventory(null), []);
+assert.equal(migratePlantHealth({ needsRehabilitation: true, rehabilitationValueLoss: 4 }).rehabilitationReason, "nursery");
+assert.equal(migratePlantHealth({ needsRehabilitation: true, nurseryStressDay: 4 }).rehabilitationReason, "long-stay");
 
 // Regular care does not stop age-based nursery stress.
-let aging = plant("aging", { care: { water: true, mist: true, prune: true } });
+let aging = plant("aging", { price: 18, care: { water: true, mist: true, prune: true } });
 aging = advancePlantHealthMorning(aging, { day: 2 });
 assert.equal(aging.nurseryAgeDays, 1);
 assert.equal(aging.needsRehabilitation, false);
@@ -69,6 +73,9 @@ const ageTwoSnapshot = aging;
 aging = advancePlantHealthMorning(aging, { day: 4 });
 assert.equal(aging.nurseryAgeDays, 3);
 assert.equal(aging.needsRehabilitation, true, "age 3 must cause nursery stress");
+assert.equal(aging.rehabilitationReason, "long-stay");
+assert.equal(aging.rehabilitationValueLoss, LONG_STAY_VALUE_LOSS);
+assert.equal(aging.price, 18 - LONG_STAY_VALUE_LOSS);
 assert.equal(aging.nurseryStressDay, 4);
 const sameMorning = advancePlantHealthMorning(aging, { day: 4 });
 assert.equal(sameMorning.nurseryAgeDays, 3, "a morning must not advance twice");
@@ -100,6 +107,9 @@ assert.equal(benchAgePaused.healthIssueAgeDays, 1, "an existing issue still ages
 const rehabilitated = markPlantRehabilitated(aging, { day: 4 });
 assert.equal(rehabilitated.nurseryAgeDays, 0);
 assert.equal(rehabilitated.needsRehabilitation, false);
+assert.equal(rehabilitated.rehabilitationReason, null);
+assert.equal(rehabilitated.price, aging.price + LONG_STAY_VALUE_LOSS);
+assert.equal(rehabilitated.rehabilitationValueLoss, 0);
 assert.equal(rehabilitated.lastRehabilitatedDay, 4);
 assert.equal(aging.needsRehabilitation, true);
 

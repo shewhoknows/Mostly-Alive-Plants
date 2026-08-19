@@ -68,6 +68,7 @@ import {
   consumeSupply,
   createDefaultSupplyState,
   generateCustomerAddOnRequest,
+  grantStarterSupplyPack,
   migrateSupplyState,
   purchaseSupply,
   releaseClipGrowLight as releaseSupplyClipGrowLight,
@@ -104,7 +105,11 @@ import {
 } from "./neighborhood-system.js";
 import {
   canBatchUnpack,
+  careBloomReward,
+  DISPLAY_GOAL_REWARD,
+  perfectDayBloomReward,
   plantSaleReadiness,
+  saleBloomReward,
   sortKeyboardTargets,
 } from "./daily-flow-system.js";
 
@@ -166,6 +171,7 @@ function plantRecord(speciesName, seed = Math.random() * 99999, options = {}) {
     recoveredToday: false,
     thirstWarned: false,
     needsRehabilitation,
+    rehabilitationReason: needsRehabilitation ? "nursery" : null,
     rehabilitationValueLoss,
     arrivalDay: Number.isFinite(options.arrivalDay) ? Math.max(1, Math.floor(options.arrivalDay)) : 1,
     slot: null,
@@ -206,9 +212,12 @@ function freshState() {
     accountingEstimate: false,
     dailyBloomStart: 8,
     dailyCare: 0,
+    dailyCareBloom: 0,
     dailyPerfects: 0,
+    dailyPerfectDayPaid: false,
     dailyRecoveries: 0,
     dailySupplySales: 0,
+    morningReturnPlantIds: [],
     displayGoal: null,
     mothSeen: false,
     dailyOperatingCost: 0,
@@ -344,7 +353,10 @@ function loadState() {
       + (migratedExpansion.purchased["display-shelves"] ? 4 : 0);
     const upgradedCapacity = Math.max(fixtureCapacity, Math.min(20, inventory.length));
     const migratedBench = migrateBenchState(value.benchState);
-    const migratedSupply = migrateSupplyState(value.supplyState);
+    let migratedSupply = migrateSupplyState(value.supplyState);
+    if (calendar.day >= 2 && !migratedSupply.starterPackGranted) {
+      migratedSupply = grantStarterSupplyPack(migratedSupply).supplyState;
+    }
     const reconciledBench = reconcileBenchInventory({
       benchState: {
         ...migratedBench,
@@ -430,6 +442,13 @@ function loadState() {
       dailyOperatingShortfall: Number.isFinite(value.dailyOperatingShortfall) ? value.dailyOperatingShortfall : 0,
       dailyOverstockCost: Number.isFinite(value.dailyOverstockCost) ? Math.max(0, value.dailyOverstockCost) : 0,
       dailySupplySales: Math.max(0, Math.floor(Number(value.dailySupplySales) || 0)),
+      dailyCareBloom: Math.max(0, Math.floor(Number(value.dailyCareBloom) || 0)),
+      dailyPerfectDayPaid: Boolean(value.dailyPerfectDayPaid),
+      morningReturnPlantIds: Array.isArray(value.morningReturnPlantIds)
+        ? [...new Set(value.morningReturnPlantIds)].filter((id) => migratedInventory.some((plant) => (
+          plant.id === id && !plant.benchStatus && !Number.isInteger(plant.slot)
+        )))
+        : [],
       outstandingCosts: Math.min(MAX_OUTSTANDING_COSTS, Math.max(0, Math.floor(Number(value.outstandingCosts) || 0))),
       neighborhoodGrantUsed: Boolean(value.neighborhoodGrantUsed),
       projectState: migrateProjectState(value.projectState),
@@ -574,6 +593,9 @@ document.addEventListener("DOMContentLoaded", () => {
     benchButton: $("bench-button"),
     benchOverview: $("bench-overview"),
     benchOverviewStatus: $("bench-overview-status"),
+    morningReturns: $("morning-returns"),
+    morningReturnsTitle: $("morning-returns-title"),
+    morningReturnsCopy: $("morning-returns-copy"),
     benchModal: $("bench-modal"),
     benchSummary: $("bench-summary"),
     benchStatus: $("bench-status"),
@@ -833,8 +855,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       id: `day-${state.day}-${choice.zone}-${choice.trait}`,
       ...choice,
-      rewardCoins: 6,
-      rewardBloom: 3,
+      rewardCoins: DISPLAY_GOAL_REWARD.coins,
+      rewardBloom: DISPLAY_GOAL_REWARD.bloom,
       claimed: false,
     };
   }
@@ -1746,7 +1768,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const fit = lightFit(plant);
     if (plant.healthIssue === PLANT_ISSUE_TYPES.MITES) return { label: "mite-infested", icon: "✣" };
     if (plant.healthIssue === PLANT_ISSUE_TYPES.FUNGUS) return { label: "fungal", icon: "✣" };
-    if (plant.needsRehabilitation) return { label: "nursery-stressed", icon: "○" };
+    if (plant.needsRehabilitation) return {
+      label: plant.rehabilitationReason === "long-stay" ? "long-stay-stressed" : "nursery-stressed",
+      icon: "○",
+    };
     if (plant.hydration < 42) return { label: "drooping", icon: "○" };
     if (plant.lifeStage === "juvenile") return { label: "growing", icon: "◔" };
     if (plant.rootComfort !== "comfortable") return { label: "root-bound", icon: "◑" };
@@ -2204,6 +2229,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.closeUpgrades?.addEventListener("click", () => openModal(ui.upgradeModal, false));
     ui.benchButton?.addEventListener("click", openCareBench);
     ui.benchOverview?.addEventListener("click", openCareBench);
+    ui.morningReturns?.addEventListener("click", selectNextMorningReturn);
     ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
     ui.supplyButton?.addEventListener("click", () => openModal(ui.supplyModal, true));
     ui.closeSupply?.addEventListener("click", () => openModal(ui.supplyModal, false));
@@ -2596,7 +2622,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     [BENCH_JOB_TYPES.REHABILITATE]: {
       name: "Rehabilitate",
-      copy: `Clear nursery stress, restore lost sale value, protect the plant for two days, and earn ${REHABILITATION_BLOOM_REWARD} Bloom.`,
+      copy: `Clear nursery or long-stay stress, restore lost sale value, protect the plant for two days, and earn ${REHABILITATION_BLOOM_REWARD} Bloom.`,
     },
     [BENCH_JOB_TYPES.PROPAGATE]: {
       name: "Propagate",
@@ -2607,7 +2633,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function benchJobCopy(type) {
     if (!state.upgrades.growLamp) return benchJobInfo[type].copy;
     if (type === BENCH_JOB_TYPES.REPOT) return "Fresh soil, comfortable roots, and +6 base value with lamp support.";
-    if (type === BENCH_JOB_TYPES.REHABILITATE) return "Clear nursery stress, restore lost sale value, and protect the plant for three days with lamp support.";
+    if (type === BENCH_JOB_TYPES.REHABILITATE) return "Clear nursery or long-stay stress, restore lost sale value, and protect the plant for three days with lamp support.";
     return "Create one juvenile cutting. Lamp support helps it mature in two mornings.";
   }
 
@@ -2617,7 +2643,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (job.type === BENCH_JOB_TYPES.REHABILITATE) {
       const restore = Math.max(0, Number(plant?.rehabilitationValueLoss) || 0);
-      return `Clears nursery stress${restore ? ` · restores ${restore} coins` : ""} · ${job.lampAssisted ? 3 : 2} protected days · +${REHABILITATION_BLOOM_REWARD} Bloom.`;
+      const stressName = plant?.rehabilitationReason === "long-stay" ? "long-stay stress" : "nursery stress";
+      return `Clears ${stressName}${restore ? ` · restores ${restore} coins` : ""} · ${job.lampAssisted ? 3 : 2} protected days · +${REHABILITATION_BLOOM_REWARD} Bloom.`;
     }
     return `Creates a juvenile cutting · ${job.lampAssisted ? 2 : 3} mornings to mature.`;
   }
@@ -2703,6 +2730,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ? "Choose today’s nursery shipment first."
       : state.phase === "preparation" && state.crates > 0
         ? `Open ${state.crates} more ${state.crates === 1 ? "carton" : "cartons"} before bench work starts.`
+        : state.phase === "preparation" && run.crateAnimation
+          ? "Finish opening the last carton before bench work starts."
         : canStartJobs
           ? "The bench is ready. Choose one plant and one job."
           : "View active jobs now. New jobs start during tomorrow’s preparation.";
@@ -2843,6 +2872,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.benchState = result.benchState;
     state.coins = result.coins;
     state.bloom = result.bloom;
+    state.morningReturnPlantIds = (state.morningReturnPlantIds || []).filter((id) => id !== plant.id);
     run.benchPlantId = null;
     if (run.lastPlantId === plant.id) run.lastPlantId = null;
     run.benchMessage = result.message;
@@ -3057,7 +3087,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       state.supplyState = released.supplyState;
       replacePlantRecord(unmarked.plant);
-      run.supplyMessage = `Clip grow light returned. ${released.availableCount} are now available.`;
+      run.supplyMessage = `Clip grow light returned. ${released.availableCount} ${released.availableCount === 1 ? "is" : "are"} now available.`;
     } else {
       const assigned = assignSupplyClipGrowLight({ supplyState: state.supplyState, plantId: plant.id });
       if (!assigned.ok) {
@@ -3080,7 +3110,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       state.supplyState = assigned.supplyState;
       replacePlantRecord(marked.plant);
-      run.supplyMessage = `Clip grow light assigned to ${plant.species}. It now supplies missing light on a dim display.`;
+      run.supplyMessage = currentFit.level === "unplaced"
+        ? `Clip grow light assigned to ${plant.species}. Place the plant on a display to use its light.`
+        : `Clip grow light assigned to ${plant.species}. It now supplies the missing light.`;
     }
     rebuildPlants();
     save();
@@ -4083,6 +4115,27 @@ document.addEventListener("DOMContentLoaded", () => {
     return plant && !plant.benchStatus ? plant : null;
   }
 
+  function pendingMorningReturns() {
+    const savedIds = Array.isArray(state.morningReturnPlantIds) ? state.morningReturnPlantIds : [];
+    const plants = [...new Set(savedIds)]
+      .map((id) => state.inventory.find((plant) => plant.id === id))
+      .filter((plant) => plant && !plant.benchStatus && !Number.isInteger(plant.slot));
+    state.morningReturnPlantIds = plants.map((plant) => plant.id);
+    return plants;
+  }
+
+  function selectNextMorningReturn() {
+    const plant = pendingMorningReturns()[0];
+    const object = plant ? plantObjects.get(plant.id) : null;
+    if (!plant || !object) {
+      toast("Every returned plant is already placed.");
+      updateUi();
+      return;
+    }
+    selectEntity({ kind: "plant", id: plant.id }, object, { source: "keyboard" });
+    toast(`${plant.species} returned from care. Choose a green display ring.`);
+  }
+
   function openCareBench() {
     const selectedPlant = state.inventory.find((plant) => plant.id === run.lastPlantId && !plant.benchStatus);
     if (selectedPlant) run.benchPlantId = selectedPlant.id;
@@ -4490,6 +4543,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     plant.slot = slotIndex;
+    state.morningReturnPlantIds = (state.morningReturnPlantIds || []).filter((plantId) => plantId !== id);
     const object = plantObjects.get(id);
     if (object) {
       queueMover({
@@ -4614,9 +4668,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const wasDrooping = plant.hydration < 42;
     plant.care[type] = true;
     let weeklyRewardCopy = "";
+    let careBloomEarned = 0;
     if (firstCare && beneficial) {
       state.dailyCare += 1;
-      earnBloom(1);
+      careBloomEarned = careBloomReward(state.dailyCareBloom);
+      if (careBloomEarned) {
+        state.dailyCareBloom += careBloomEarned;
+        earnBloom(careBloomEarned);
+      }
       addWeekStat("care", 1);
       weeklyRewardCopy = advanceWeekGoal({ metric: "beneficialCare", value: 1 });
     }
@@ -4646,19 +4705,22 @@ document.addEventListener("DOMContentLoaded", () => {
         ? `${plant.species} lifts every leaf. Thirst rescue! +1 Bloom.`
         : `${plant.species} drinks with surprising urgency.`,
       mist: beneficial
-        ? `${plant.species} is now experiencing weather. +1 Bloom.`
+        ? `${plant.species} is now experiencing weather.`
         : `${plant.species} tolerates the weather, but prefers drier air. No care bonus.`,
       prune: beneficial
-        ? `One tiny haircut. Considerable confidence. +1 Bloom.`
+        ? "One tiny haircut. Considerable confidence."
         : `${plant.species} would rather keep that growth. No care bonus.`,
     };
+    const careRewardCopy = careBloomEarned
+      ? " Helpful care: +1 Bloom."
+      : firstCare && beneficial ? " Care goal progress added; today’s care Bloom limit is reached." : "";
     const stressCopy = plant.needsRehabilitation
-      ? ` Its normal care is complete, but nursery stress remains. Rehabilitate it to restore ${plant.rehabilitationValueLoss || 0} coins of sale value.`
+      ? ` Its normal care is complete, but ${plant.rehabilitationReason === "long-stay" ? "long-stay stress" : "nursery stress"} remains. Rehabilitate it to restore ${plant.rehabilitationValueLoss || 0} coins of sale value.`
       : "";
     const issueCopy = plant.healthIssue
       ? ` The ${plant.healthIssue} remain. Use ${supplyItemForId(treatmentForIssue(plant.healthIssue))?.title || "the correct treatment"} from the retail shelf.`
       : "";
-    toast(`${messages[type]}${stressCopy}${issueCopy}${weeklyRewardCopy}`, weeklyRewardCopy || stressCopy || issueCopy ? 5200 : 3100);
+    toast(`${messages[type]}${careRewardCopy}${stressCopy}${issueCopy}${weeklyRewardCopy}`, weeklyRewardCopy || careRewardCopy || stressCopy || issueCopy ? 5200 : 3100);
     updateUi();
   }
 
@@ -4703,7 +4765,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const thriving = condition.label === "thriving";
     const idealLight = lightFit(plant).level === "ideal";
     const extras = [wishMet, Boolean(careWishMet), thriving].filter(Boolean).length;
-    if (["drooping", "nursery-stressed", "root-bound", "light-stressed", "mite-infested", "fungal"].includes(condition.label) && band !== "quick") {
+    if (["drooping", "nursery-stressed", "long-stay-stressed", "root-bound", "light-stressed", "mite-infested", "fungal"].includes(condition.label) && band !== "quick") {
       sound("error");
       toast(`${person.name} notices that ${plant.species} is ${condition.label}. Improve its condition or use a Quick tag.`);
       return;
@@ -4733,7 +4795,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const payout = price + expansionBonus + eventBonus;
     const satisfaction = 1 + extras + (idealLight ? 1 : 0) + (band === "quick" ? 1 : 0);
     const delighted = satisfaction >= 4;
-    const bloomReward = 2 + extras;
+    const bloomReward = saleBloomReward(extras);
     const plantCostOfGoods = Number.isFinite(plant.acquisitionCost) ? plant.acquisitionCost : plant.wholesaleCost || 0;
     state.coins += payout;
     const addOnRequest = currentCustomerAddOn(person);
@@ -4754,8 +4816,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const costOfGoods = plantCostOfGoods + addOnCostOfGoods;
     earnBloom(bloomReward);
     if (perfect) state.dailyPerfects += 1;
-    const perfectDayBonus = perfect && state.dailyPerfects === 3;
-    if (perfectDayBonus) earnBloom(8);
+    const perfectDayBonus = perfectDayBloomReward({
+      perfects: state.dailyPerfects,
+      visitorCount: state.customers.length,
+      completedSales: state.dailySales + 1,
+      alreadyPaid: state.dailyPerfectDayPaid,
+    });
+    if (perfectDayBonus) {
+      state.dailyPerfectDayPaid = true;
+      earnBloom(perfectDayBonus);
+    }
     state.dailyRevenue += saleRevenue;
     state.dailyCostOfGoods += costOfGoods;
     state.dailySales += 1;
@@ -4763,7 +4833,7 @@ document.addEventListener("DOMContentLoaded", () => {
     addWeekStat("revenue", saleRevenue);
     addWeekStat("costOfGoods", costOfGoods);
     addWeekStat("profit", saleRevenue - costOfGoods);
-    addWeekStat("bloom", bloomReward + (perfectDayBonus ? 8 : 0));
+    addWeekStat("bloom", bloomReward + perfectDayBonus);
     if (perfect) addWeekStat("perfects", 1);
     if (band === "boutique") addWeekStat("boutiqueSales", 1);
     if (band === "quick") addWeekStat("quickSales", 1);
@@ -4826,7 +4896,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const addOnCopy = addOnSale?.addOnSold
       ? ` They also buy ${addOnSale.item.title} for ${addOnSale.revenue} coins.`
       : addOnRequest ? ` ${addOnRequest.title} was requested, but it was out of stock.` : "";
-    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins.${shopBonusCopy}${eventBonusCopy}${addOnCopy}${perfectDayBonus ? " Three perfect matches—+8 Bloom!" : ""}${weeklyRewardCopy}`, weeklyRewardCopy || addOnCopy || eventBonusCopy ? 5200 : 3100);
+    toast(`${perfect ? "Perfect" : extras ? "Lovely" : "Good"} match! ${person.name} pays the ${PRICE_BANDS[band].label} tag: ${price} coins and adds ${bloomReward} Bloom.${shopBonusCopy}${eventBonusCopy}${addOnCopy}${perfectDayBonus ? ` Full perfect day—+${perfectDayBonus} Bloom!` : ""}${weeklyRewardCopy}`, weeklyRewardCopy || addOnCopy || eventBonusCopy || perfectDayBonus ? 5200 : 3100);
     updateSlotGlow();
     updateUi(true);
     if (state.day === 1 && state.dailySales === 1 && !state.mothSeen) moonMoth();
@@ -5083,7 +5153,9 @@ document.addEventListener("DOMContentLoaded", () => {
     state.dailyOverstockCost = 0;
     state.accountingEstimate = false;
     state.dailyCare = 0;
+    state.dailyCareBloom = 0;
     state.dailyPerfects = 0;
+    state.dailyPerfectDayPaid = false;
     state.dailyRecoveries = 0;
     state.dailySupplySales = 0;
     state.customers = [];
@@ -5095,6 +5167,11 @@ document.addEventListener("DOMContentLoaded", () => {
       inventory: state.inventory,
     });
     state.neighborhoodState = neighborhoodMorning.state;
+    const starterPackMorning = state.day >= 2
+      ? grantStarterSupplyPack(state.supplyState)
+      : { granted: false, supplyState: state.supplyState, message: "" };
+    state.supplyState = starterPackMorning.supplyState;
+    if (starterPackMorning.granted) run.supplyMessage = starterPackMorning.message;
     const heldIds = new Set(state.neighborhoodState.order?.status === ORDER_STATUS.ACTIVE
       ? state.neighborhoodState.order.heldPlantIds
       : []);
@@ -5137,6 +5214,8 @@ document.addEventListener("DOMContentLoaded", () => {
         : REHABILITATION_BASE_SLOTS,
     };
     state.inventory = migratePlantHealthInventory(benchMorning.inventory);
+    const returnedPlantIds = (benchMorning.appliedJobs || []).flatMap((job) => [job.plantId, job.childId].filter(Boolean));
+    state.morningReturnPlantIds = [...new Set([...(state.morningReturnPlantIds || []), ...returnedPlantIds])];
     const rehabilitationRewardCopy = completedRehabilitations
       ? ` Recovery work earned ${completedRehabilitations * REHABILITATION_BLOOM_REWARD} Bloom.`
       : "";
@@ -5173,6 +5252,7 @@ document.addEventListener("DOMContentLoaded", () => {
       newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
       healthMorning.newlyStressed.length || healthMorning.newIssues.length ? healthMorning.message : "",
       neighborhoodMorning.message,
+      starterPackMorning.granted ? starterPackMorning.message : "",
       calendar.isMonday && state.neighborhoodState.event ? `${state.neighborhoodState.event.title}: ${state.neighborhoodState.event.copy}` : "",
       state.upgrades.growLamp && state.benchState.jobs.some((job) => job.lampAssisted)
         ? "The grow lamp is helping the active Care Bench work."
@@ -5394,13 +5474,25 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (benchReady) {
           ui.benchOverviewStatus.textContent = "Ready now. Choose a plant and start Repot, Rehabilitate, or Propagate.";
         } else if (state.phase === "preparation") {
-          ui.benchOverviewStatus.textContent = `Open ${state.crates} more ${state.crates === 1 ? "carton" : "cartons"}, then start a bench job.`;
+          ui.benchOverviewStatus.textContent = run.crateAnimation
+            ? "Finish opening the last carton, then start a bench job."
+            : `Open ${state.crates} more ${state.crates === 1 ? "carton" : "cartons"}, then start a bench job.`;
         } else if (state.phase === "supply") {
           ui.benchOverviewStatus.textContent = "Choose a shipment first. Bench jobs start during preparation.";
         } else {
           ui.benchOverviewStatus.textContent = "View jobs now. New jobs start during tomorrow’s preparation.";
         }
       }
+    }
+    if (ui.morningReturns) {
+      const returns = pendingMorningReturns();
+      ui.morningReturns.hidden = !run.started || returns.length === 0 || state.phase === "report";
+      if (ui.morningReturnsTitle) ui.morningReturnsTitle.textContent = returns.length === 1
+        ? `Place ${returns[0].species}`
+        : `Place ${returns.length} returned plants`;
+      if (ui.morningReturnsCopy) ui.morningReturnsCopy.textContent = returns.length === 1
+        ? "It is back from care and needs a display place."
+        : `${returns.map((plant) => plant.species).join(" · ")}. Select the next plant.`;
     }
     if (ui.openShop) {
       const readyToOpen = state.phase === "preparation" && state.crates === 0 && !run.crateAnimation;
@@ -5499,7 +5591,7 @@ document.addEventListener("DOMContentLoaded", () => {
         title = "Recovery and Propagation Work Area";
         copy = specialistJobs
           ? `${specialistJobs} specialist ${specialistJobs === 1 ? "job is" : "jobs are"} active here. Recovery plants and new cuttings stay on this separate bench.`
-          : "This station clears nursery stress, restores lost sale value, and gives new cuttings a safe place to root.";
+          : "This station clears nursery or long-stay stress, restores lost sale value, and gives new cuttings a safe place to root.";
         action = "Open Specialist Jobs";
         disabled = false;
       } else if (selected.id === "watering-can") {

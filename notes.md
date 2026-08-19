@@ -292,3 +292,15 @@
 - Added a desktop Arrange bar. It names the plant that is moving, explains where it can go, and provides **Cancel move** and **Done** controls.
 - Kept the new bar desktop-only. The mobile HUD was not changed in this milestone.
 - Daily-flow, Care Bench, Retail Supply Shelf, JavaScript syntax, DOM ID, and whitespace checks passed.
+
+## 2026-08-19 — Trust, Control, and Balance milestone
+
+- Raised the save schema to version 9. Existing saves keep their inventory, jobs, weekly order, prices, finances, fixtures, and upgrades.
+- Split rehabilitation into two clear conditions. Rescue deliveries can arrive nursery-stressed. Any mature shop plant gets long-stay stress after three completed shop mornings. Both conditions reduce saved sale value by four coins until treatment.
+- Kept normal care separate from rehabilitation. Water, Mist, and Prune improve their usual needs but do not clear nursery or long-stay stress. One morning of Rehabilitate restores the exact saved value loss, resets shop age, gives two protected shop days, and earns 3 Bloom. A Grow Lamp adds a third protected day.
+- Added a morning returned-work task. Completed Repot, Rehabilitate, and Propagate plants stay visible in the shop, and the task card selects the next returned plant for review or placement.
+- Added a one-time Day-2 Retail Supply Shelf starter pack with one Fertilizer, one Fungicide, and one Potting Soil. Optional customer add-on requests now start on Day 3, after the player has seen the shelf.
+- Tightened the early economy. Helpful care earns at most 3 Bloom each day. Sales earn 1–2 Bloom. A fully perfect sales day adds 3 Bloom once. The display task now pays 4 coins and 1 Bloom. Weekly objective rewards are lower. Week 2 base operating cost starts at 6 coins and rises by 2 coins per week to a 20-coin cap.
+- Corrected small trust issues in the shop copy. Care Bench preparation no longer says **Open 0 more cartons** during the final opening animation. Clip Grow Light return text uses correct singular and plural grammar. Assigning a light to loose stock now tells the player to place the plant on a display.
+- Kept this work desktop-focused. The mobile HUD was not changed.
+- Final browser checks used the 1280×720 desktop view and an existing Day-2 shop. They covered the organized morning summary, the three-unit starter shelf, supplier choice, plant-first `Q`, move cancellation, the desktop Arrange bar, Care Bench selection retention, the final-carton message, and a clean game console.

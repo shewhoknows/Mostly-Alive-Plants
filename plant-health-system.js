@@ -1,5 +1,6 @@
-export const PLANT_HEALTH_STATE_VERSION = 1;
+export const PLANT_HEALTH_STATE_VERSION = 2;
 export const NURSERY_STRESS_AFTER_DAYS = 2;
+export const LONG_STAY_VALUE_LOSS = 4;
 export const HEALTH_ISSUE_START_DAY = 6;
 export const HEALTH_ISSUE_INTERVAL_DAYS = 4;
 export const HEALTH_ISSUE_COOLDOWN_DAYS = 4;
@@ -23,6 +24,7 @@ export const ISSUE_TREATMENTS = Object.freeze({
 
 const VALID_ISSUES = new Set(Object.values(PLANT_ISSUE_TYPES));
 const VALID_TREATMENTS = new Set(Object.values(TREATMENT_IDS));
+const VALID_REHABILITATION_REASONS = new Set(["nursery", "long-stay"]);
 
 function safeInteger(value, fallback = 0, minimum = 0) {
   const number = Number(value);
@@ -72,11 +74,22 @@ function normalizeIssue(value, plant = {}) {
  */
 export function migratePlantHealth(plant = {}) {
   const issue = normalizeIssue(plant.healthIssue, plant);
+  const needsRehabilitation = plant.needsRehabilitation === true;
+  const savedValueLoss = safeInteger(plant.rehabilitationValueLoss);
+  const inferredReason = savedValueLoss > 0
+    ? "nursery"
+    : nullableDay(plant.nurseryStressDay) ? "long-stay" : "nursery";
   return {
     ...plant,
     plantHealthVersion: PLANT_HEALTH_STATE_VERSION,
     nurseryAgeDays: safeInteger(plant.nurseryAgeDays),
-    needsRehabilitation: plant.needsRehabilitation === true,
+    needsRehabilitation,
+    rehabilitationReason: needsRehabilitation
+      ? VALID_REHABILITATION_REASONS.has(plant.rehabilitationReason)
+        ? plant.rehabilitationReason
+        : inferredReason
+      : null,
+    rehabilitationValueLoss: needsRehabilitation ? savedValueLoss : 0,
     nurseryStressDay: nullableDay(plant.nurseryStressDay),
     healthIssue: issue?.type || null,
     healthIssueDay: issue?.onsetDay || null,
@@ -119,11 +132,15 @@ export function advancePlantHealthMorning(plant, { day = 1 } = {}) {
     ? next.healthIssueAgeDays + delta
     : next.healthIssueAgeDays;
   const becameStressed = !next.needsRehabilitation && nurseryAgeDays > NURSERY_STRESS_AFTER_DAYS;
+  const valueLoss = becameStressed ? LONG_STAY_VALUE_LOSS : next.rehabilitationValueLoss;
 
   return {
     ...next,
     nurseryAgeDays,
     needsRehabilitation: next.needsRehabilitation || becameStressed,
+    rehabilitationReason: becameStressed ? "long-stay" : next.rehabilitationReason,
+    rehabilitationValueLoss: valueLoss,
+    price: becameStressed ? Math.max(1, safeInteger(next.price, 1, 1) - valueLoss) : next.price,
     nurseryStressDay: becameStressed ? currentDay : next.nurseryStressDay,
     healthIssueAgeDays,
     healthIssueSeverity: next.healthIssue ? issueSeverity(healthIssueAgeDays) : null,
@@ -187,7 +204,7 @@ export function advancePlantHealthInventoryMorning(inventory = [], { day = 1 } =
   }
 
   const stressCopy = newlyStressed.length
-    ? `${newlyStressed.length} ${newlyStressed.length === 1 ? "plant needs" : "plants need"} rehabilitation.`
+    ? `${newlyStressed.length} long-stay ${newlyStressed.length === 1 ? "plant needs" : "plants need"} rehabilitation.`
     : "";
   const issueCopy = newIssues.length
     ? `${newIssues.length === 1 ? "One plant has" : `${newIssues.length} plants have`} ${newIssues.map((issue) => issue.type).join(" and ")}.`
@@ -318,13 +335,17 @@ export function hasFertilizerGrowthBoost(plant, { day = 1 } = {}) {
   return next.growthBoost > 0 && next.fertilizedDay === safeDay(day);
 }
 
-/** Resets the nursery-age clock after a completed rehabilitation job. */
+/** Clears a completed rehabilitation and restores its saved value loss. */
 export function markPlantRehabilitated(plant, { day = 1 } = {}) {
   const next = migratePlantHealth(plant);
+  const restoredValue = next.rehabilitationValueLoss;
   return {
     ...next,
+    price: safeInteger(next.price, 1, 1) + restoredValue,
     nurseryAgeDays: 0,
     needsRehabilitation: false,
+    rehabilitationReason: null,
+    rehabilitationValueLoss: 0,
     nurseryStressDay: null,
     lastRehabilitatedDay: safeDay(day),
   };

@@ -73,7 +73,7 @@ function choiceBufferForWeek(week, capacity) {
 function operatingCost(calendar, visitorCount, inventoryCount) {
   const baseCost = calendar.week === 1
     ? 0
-    : Math.min(14, 3 + (calendar.week - 2));
+    : Math.min(20, 6 + (calendar.week - 2) * 2);
   const utilities = calendar.week === 1
     ? WEEK_ONE_UTILITIES[calendar.weekdayIndex]
     : MATURE_UTILITIES[calendar.weekdayIndex];

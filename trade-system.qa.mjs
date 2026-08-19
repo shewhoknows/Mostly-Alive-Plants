@@ -12,6 +12,9 @@ assert.equal(closingOverstockCost({ week: 3, inventoryCount: 16, stockTarget: 10
 assert.equal(closingOverstockCost({ week: 4, inventoryCount: 10, stockTarget: 10 }), 0);
 assert.equal(closingOverstockCost({ week: 4, inventoryCount: 13, stockTarget: 10 }), 6);
 assert.equal(closingOverstockCost({ week: 20, inventoryCount: 16, stockTarget: 10 }), 12);
+assert.equal(dailyTradeProfile({ day: 6, inventoryCount: 0 }).operatingCostBreakdown.baseCost, 6);
+assert.equal(dailyTradeProfile({ day: 10, inventoryCount: 0 }).operatingCost, 13);
+assert.equal(dailyTradeProfile({ day: 11, inventoryCount: 0 }).operatingCostBreakdown.baseCost, 8);
 assert.deepEqual(optionalSpendingBudget({ coins: 100, outstandingCosts: 25, dailyOperatingCost: 12 }), { coins: 63, reserved: 37 });
 assert.deepEqual(optionalSpendingBudget({ coins: 20, outstandingCosts: 25, dailyOperatingCost: 12 }), { coins: 0, reserved: 37 });
 assert.deepEqual(optionalSpendingBudget({ coins: 20, outstandingCosts: 25, dailyOperatingCost: 12, dailyOperatingCostPaid: true }), { coins: 20, reserved: 0 });

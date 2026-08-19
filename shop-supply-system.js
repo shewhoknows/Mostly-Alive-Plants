@@ -1,5 +1,11 @@
-export const SHOP_SUPPLY_STATE_VERSION = 1;
+export const SHOP_SUPPLY_STATE_VERSION = 2;
 export const CUSTOMER_ADD_ON_CHANCE_PERCENT = 40;
+export const CUSTOMER_ADD_ON_START_DAY = 3;
+export const STARTER_SUPPLY_PACK = Object.freeze({
+  fertilizer: 1,
+  fungicide: 1,
+  "potting-soil": 1,
+});
 
 /**
  * Small shop supplies. `stock` is the total number owned. Clip-grow-light
@@ -159,6 +165,7 @@ export function createDefaultSupplyState() {
     stock: Object.fromEntries(SUPPLY_CATALOG.map(({ id }) => [id, 0])),
     purchased: {},
     lightAssignments: {},
+    starterPackGranted: false,
   };
 }
 
@@ -199,6 +206,27 @@ export function migrateSupplyState(value) {
     stock,
     purchased,
     lightAssignments,
+    starterPackGranted: source.starterPackGranted === true,
+  };
+}
+
+export function grantStarterSupplyPack(supplyState) {
+  const state = migrateSupplyState(supplyState);
+  if (state.starterPackGranted) {
+    return { granted: false, supplyState: state, message: "The starter retail pack is already on the shelf." };
+  }
+  const stock = { ...state.stock };
+  const purchased = { ...state.purchased };
+  Object.entries(STARTER_SUPPLY_PACK).forEach(([id, quantity]) => {
+    const item = CATALOG_BY_ID.get(id);
+    if (!item) return;
+    stock[id] = Math.min(item.maxStock, stock[id] + quantity);
+    purchased[id] = true;
+  });
+  return {
+    granted: true,
+    supplyState: { ...state, stock, purchased, starterPackGranted: true },
+    message: "Starter retail pack added: fertilizer, fungicide, and potting soil. Open the Retail Supply Shelf to review it.",
   };
 }
 
@@ -552,6 +580,7 @@ export function generateCustomerAddOnRequest({
   saleIndex = 0,
 } = {}) {
   const safeDay = positiveInteger(day);
+  if (safeDay < CUSTOMER_ADD_ON_START_DAY) return null;
   const customerKey = recordIdentity(customerId ?? customer, "customer");
   const plantKey = recordIdentity(plantId ?? plant, "plant");
   const safeSaleIndex = nonNegativeInteger(saleIndex);

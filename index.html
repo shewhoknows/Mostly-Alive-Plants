@@ -21,7 +21,7 @@
     />
     <link rel="preload" href="assets/textures/terracotta-floor.png" as="image" />
     <link rel="preload" href="assets/textures/botanical-plaster.png" as="image" />
-    <link rel="stylesheet" href="styles.css?v=20260819b" />
+    <link rel="stylesheet" href="styles.css?v=20260819c" />
   </head>
   <body>
     <canvas
@@ -152,6 +152,11 @@
           </span>
           <strong>Repot · Rehabilitate · Propagate</strong>
           <span id="bench-overview-status">Start jobs during preparation, after all cartons are open.</span>
+        </button>
+        <button id="morning-returns" class="morning-returns" type="button" hidden>
+          <span>Returned from care</span>
+          <strong id="morning-returns-title">Place the recovered plant</strong>
+          <small id="morning-returns-copy">Select the plant and give it a display place.</small>
         </button>
         <button id="open-shop-button" class="button button-primary task-button" type="button" hidden>
           <span>Open the shop</span>
@@ -643,6 +648,6 @@
     </aside>
 
     <noscript>This shop needs JavaScript to grow.</noscript>
-    <script type="module" src="game.js?v=20260819b"></script>
+    <script type="module" src="game.js?v=20260819c"></script>
   </body>
 </html>

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 
 import {
   CUSTOMER_ADD_ON_CHANCE_PERCENT,
+  CUSTOMER_ADD_ON_START_DAY,
   SHOP_SUPPLY_STATE_VERSION,
+  STARTER_SUPPLY_PACK,
   SUPPLY_CATALOG,
   assignClipGrowLight,
   assignedClipGrowLightCount,
@@ -10,6 +12,7 @@ import {
   consumeSupply,
   createDefaultSupplyState,
   generateCustomerAddOnRequest,
+  grantStarterSupplyPack,
   migrateSupplyState,
   plantHasClipGrowLight,
   purchaseSupply,
@@ -56,6 +59,7 @@ assert.deepEqual(empty, {
   },
   purchased: {},
   lightAssignments: {},
+  starterPackGranted: false,
 });
 assert.deepEqual(migrateSupplyState(), empty);
 assert.deepEqual(JSON.parse(JSON.stringify(empty)), empty);
@@ -89,6 +93,15 @@ assert.deepEqual(migrated.purchased, {
   "potting-soil": true,
 });
 assert.deepEqual(migrateSupplyState(JSON.parse(JSON.stringify(migrated))), migrated);
+
+const starter = grantStarterSupplyPack(empty);
+assert.equal(starter.granted, true);
+assert.equal(starter.supplyState.starterPackGranted, true);
+Object.entries(STARTER_SUPPLY_PACK).forEach(([id, quantity]) => {
+  assert.equal(starter.supplyState.stock[id], quantity);
+});
+assert.equal(grantStarterSupplyPack(starter.supplyState).granted, false);
+assert.equal(generateCustomerAddOnRequest({ day: CUSTOMER_ADD_ON_START_DAY - 1, customerId: "early", plantId: "plant" }), null);
 
 const readyFirst = validateSupplyPurchase({
   id: "fertilizer",

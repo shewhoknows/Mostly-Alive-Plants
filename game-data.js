@@ -1,4 +1,4 @@
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 export const CARES = ["water", "mist", "prune"];
 
@@ -548,7 +548,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Finish the week with {target} coins of gross profit.",
     metric: "grossProfit",
     target: { base: 90, perWeek: 12, maximum: 260 },
-    reward: { coins: 18, bloom: 6 },
+    reward: { coins: 12, bloom: 4 },
   },
   {
     id: "new-windowsills",
@@ -556,7 +556,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Find homes for {target} plants this week.",
     metric: "plantsSold",
     target: { base: 11, perWeek: 1, maximum: 15 },
-    reward: { coins: 16, bloom: 7 },
+    reward: { coins: 10, bloom: 4 },
   },
   {
     id: "perfect-listener",
@@ -564,7 +564,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Complete {target} perfect customer briefs.",
     metric: "perfectBriefs",
     target: { base: 4, perWeek: 1, maximum: 9 },
-    reward: { coins: 12, bloom: 9 },
+    reward: { coins: 8, bloom: 5 },
   },
   {
     id: "right-plant-right-light",
@@ -572,7 +572,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "End {target} days with every displayed plant in tolerated or ideal light.",
     metric: "healthyDisplayDays",
     target: { base: 3, perWeek: 0, maximum: 5 },
-    reward: { coins: 10, bloom: 8 },
+    reward: { coins: 7, bloom: 5 },
   },
   {
     id: "thirst-rescue",
@@ -580,7 +580,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Rescue {target} drooping plants with a good drink.",
     metric: "thirstRescues",
     target: { base: 3, perWeek: 0, maximum: 8 },
-    reward: { coins: 10, bloom: 7 },
+    reward: { coins: 7, bloom: 4 },
   },
   {
     id: "boutique-week",
@@ -591,7 +591,7 @@ export const WEEKLY_OBJECTIVES = [
     // higher invariant would fail for a full migrated shop of the priciest
     // species: only one unlocked neighbor can afford that worst-case price.
     target: { base: 5, perWeek: 0, maximum: 5 },
-    reward: { coins: 20, bloom: 5 },
+    reward: { coins: 12, bloom: 3 },
   },
   {
     id: "quick-turnover",
@@ -599,7 +599,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Rehome {target} Quick-priced plants.",
     metric: "quickSales",
     target: { base: 6, perWeek: 1, maximum: 12 },
-    reward: { coins: 12, bloom: 6 },
+    reward: { coins: 8, bloom: 4 },
   },
   {
     id: "variety-window",
@@ -607,7 +607,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Sell {target} different plant species this week.",
     metric: "uniqueSpeciesSold",
     target: { base: 5, perWeek: 1, maximum: 9 },
-    reward: { coins: 14, bloom: 8 },
+    reward: { coins: 9, bloom: 5 },
   },
   {
     id: "thoughtful-care",
@@ -615,7 +615,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Give plants {target} beneficial care moments.",
     metric: "beneficialCare",
     target: { base: 16, perWeek: 2, maximum: 40 },
-    reward: { coins: 12, bloom: 8 },
+    reward: { coins: 8, bloom: 5 },
   },
   {
     id: "familiar-faces",
@@ -623,7 +623,7 @@ export const WEEKLY_OBJECTIVES = [
     description: "Delight {target} returning customers.",
     metric: "returningCustomersDelighted",
     target: { base: 3, perWeek: 1, maximum: 9 },
-    reward: { coins: 15, bloom: 10 },
+    reward: { coins: 10, bloom: 6 },
   },
 ];
 

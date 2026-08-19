@@ -182,6 +182,7 @@ assert.equal(thirstyNormal.code, "rehabilitation-not-needed");
 inventory = [plant("rescue", {
   hydration: 100,
   needsRehabilitation: true,
+  rehabilitationReason: "nursery",
   nurseryAgeDays: 4,
   nurseryStressDay: 3,
   healthIssue: "mites",
@@ -212,6 +213,7 @@ const rehabDone = advanceAndApplyBenchJobs({
   capacity: 12,
 });
 assert.equal(rehabDone.inventory[0].needsRehabilitation, false);
+assert.equal(rehabDone.inventory[0].rehabilitationReason, null);
 assert.equal(rehabDone.inventory[0].nurseryAgeDays, 0);
 assert.equal(rehabDone.inventory[0].nurseryStressDay, null);
 assert.equal(rehabDone.inventory[0].healthIssue, "mites");
@@ -232,6 +234,29 @@ const rehabAppliedAgain = advanceAndApplyBenchJobs({
 });
 assert.equal(rehabAppliedAgain.inventory[0].price, fern.price);
 assert.equal(rehabAppliedAgain.appliedJobs.length, 0);
+
+const longStayStart = startBenchJob({
+  type: BENCH_JOB_TYPES.REHABILITATE,
+  plantId: "long-stay",
+  inventory: [plant("long-stay", {
+    needsRehabilitation: true,
+    rehabilitationReason: "long-stay",
+    rehabilitationValueLoss: REHABILITATE_VALUE_RESTORE,
+    price: fern.price - REHABILITATE_VALUE_RESTORE,
+    slot: null,
+  })],
+  benchState: createDefaultBenchState(),
+  coins: 20,
+  day: 8,
+});
+const longStayDone = advanceAndApplyBenchJobs({
+  benchState: longStayStart.benchState,
+  inventory: longStayStart.inventory,
+  day: 9,
+});
+assert.equal(longStayDone.inventory[0].price, fern.price);
+assert.equal(longStayDone.inventory[0].rehabilitationReason, null);
+assert.match(longStayDone.message, /long-stay stress/);
 
 const legacyValueRehab = startBenchJob({
   type: BENCH_JOB_TYPES.REHABILITATE,

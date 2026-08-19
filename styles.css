@@ -801,6 +801,45 @@ body[data-selection="plant"] .task-card .bench-overview {
   transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
+.morning-returns {
+  display: grid;
+  width: 100%;
+  gap: 0.18rem;
+  margin-top: 0.65rem;
+  padding: 0.64rem 0.72rem;
+  border: 1px solid rgba(114, 75, 109, 0.48);
+  border-radius: 0.75rem 0.75rem 1.15rem 0.75rem;
+  color: var(--ink);
+  background: linear-gradient(110deg, rgba(120, 185, 174, 0.32), rgba(154, 115, 157, 0.16));
+  box-shadow: 0 0.24rem 0 var(--aqua);
+  text-align: left;
+  cursor: pointer;
+}
+
+.morning-returns > span {
+  color: #72506f;
+  font-size: 0.47rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.morning-returns > strong {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 0.76rem;
+}
+
+.morning-returns > small {
+  color: rgba(32, 58, 44, 0.7);
+  font-size: 0.51rem;
+  line-height: 1.35;
+}
+
+.morning-returns:hover {
+  border-color: #72506f;
+  background: linear-gradient(110deg, rgba(120, 185, 174, 0.44), rgba(154, 115, 157, 0.24));
+}
+
 .bench-overview:hover {
   background:
     linear-gradient(105deg, rgba(120, 185, 174, 0.34), transparent 62%),

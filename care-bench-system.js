@@ -326,7 +326,7 @@ export function validateBenchJob({
   if (type === BENCH_JOB_TYPES.REHABILITATE) {
     const protectedUntilDay = safeInteger(plant.conditionProtectionUntilDay);
     if (plant.needsRehabilitation !== true || protectedUntilDay >= safeDay(day)) {
-      return failure("rehabilitation-not-needed", "Only nursery-stressed rescue stock needs Rehabilitate. Water thirsty plants or move light-stressed plants.", context);
+      return failure("rehabilitation-not-needed", "Only nursery-stressed or long-stay-stressed plants need Rehabilitate. Water thirsty plants or move light-stressed plants.", context);
     }
   }
 
@@ -617,6 +617,7 @@ export function applyCompletedBenchJobs({
       hydration: Math.max(Number(plant.hydration) || 0, REHABILITATE_HYDRATION),
       condition: "healthy",
       needsRehabilitation: false,
+      rehabilitationReason: null,
       nurseryAgeDays: 0,
       nurseryStressDay: null,
       price: safeInteger(plant.price, 1, 1) + restoredValue,
@@ -626,9 +627,10 @@ export function applyCompletedBenchJobs({
       conditionProtectionUntilDay: currentDay + protectionDays - 1,
     };
     appliedJobs.push({ ...job, restoredValue });
+    const stressName = plant.rehabilitationReason === "long-stay" ? "long-stay stress" : "nursery stress";
     messages.push(job.lampAssisted
-      ? `${plant.species || "The plant"} has no nursery stress. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}. The grow lamp added one protection day.`
-      : `${plant.species || "The plant"} has no nursery stress. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}, with two protected days.`);
+      ? `${plant.species || "The plant"} has no ${stressName}. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}. The grow lamp added one protection day.`
+      : `${plant.species || "The plant"} has no ${stressName}. Full sale value is restored${restoredValue ? ` (+${restoredValue} coins)` : ""}, with two protected days.`);
   });
 
   return {
