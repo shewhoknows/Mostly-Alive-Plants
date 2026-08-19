@@ -273,3 +273,4 @@
 
 - Added **Start over** to the title screen when a valid browser save exists. It opens a clear confirmation step, deletes only the `Mostly Alive Plants` save, and reloads a fresh Day 1 shop.
 - Corrected the fresh title state. A browser with no saved game now says **Start the day** even though the new shop already contains its two starter plants.
+- Added a release cache key to the main style and game files so this control appears at once after the GitHub Pages update.
