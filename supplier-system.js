@@ -1,6 +1,6 @@
-import { INVENTORY_CAPACITY, PRICE_BANDS, SPECIES, SUPPLIER_TYPES } from "./game-data.js";
-import { askingPrice, availableSpeciesForWeek, calendarForDay } from "./progression-system.js";
-import { dailyTradeProfile } from "./trade-system.js";
+import { INVENTORY_CAPACITY, PRICE_BANDS, SPECIES, SUPPLIER_TYPES } from "./game-data.js?v=20260819d";
+import { askingPrice, availableSpeciesForWeek, calendarForDay } from "./progression-system.js?v=20260819d";
+import { dailyTradeProfile } from "./trade-system.js?v=20260819d";
 
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
 const SPECIES_BY_NAME = new Map(SPECIES.map((species) => [species.name, species]));

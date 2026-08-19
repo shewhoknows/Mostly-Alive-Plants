@@ -304,3 +304,4 @@
 - Corrected small trust issues in the shop copy. Care Bench preparation no longer says **Open 0 more cartons** during the final opening animation. Clip Grow Light return text uses correct singular and plural grammar. Assigning a light to loose stock now tells the player to place the plant on a display.
 - Kept this work desktop-focused. The mobile HUD was not changed.
 - Final browser checks used the 1280×720 desktop view and an existing Day-2 shop. They covered the organized morning summary, the three-unit starter shelf, supplier choice, plant-first `Q`, move cancellation, the desktop Arrange bar, Care Bench selection retention, the final-carton message, and a clean game console.
+- Added the same release key to every changed runtime module. Existing browser tabs cannot combine the new main game file with an older cached helper file during this save-version update.

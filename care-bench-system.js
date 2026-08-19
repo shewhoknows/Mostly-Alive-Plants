@@ -1,4 +1,4 @@
-import { INVENTORY_CAPACITY, SLOT_DATA, SPECIES } from "./game-data.js";
+import { INVENTORY_CAPACITY, SLOT_DATA, SPECIES } from "./game-data.js?v=20260819d";
 
 export const CARE_BENCH_STATE_VERSION = 3;
 export const CARE_BENCH_BASE_SLOTS = 1;

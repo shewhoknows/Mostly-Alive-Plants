@@ -1,6 +1,6 @@
 import * as THREE from "./vendor/three.module.min.js";
-import { createCharacter3D, animateCharacter3D } from "./character-models.js";
-import { createDistinctPlant3D } from "./plant-models.js";
+import { createCharacter3D, animateCharacter3D } from "./character-models.js?v=20260819d";
+import { createDistinctPlant3D } from "./plant-models.js?v=20260819d";
 import {
   PRICE_BANDS,
   CARES,
@@ -9,9 +9,9 @@ import {
   SAVE_VERSION,
   SLOT_DATA,
   SPECIES,
-} from "./game-data.js";
-import { generateSupplierLots, inventoryCoversCustomers } from "./supplier-system.js";
-import { closingOverstockCost, dailyTradeProfile, optionalSpendingBudget } from "./trade-system.js";
+} from "./game-data.js?v=20260819d";
+import { generateSupplierLots, inventoryCoversCustomers } from "./supplier-system.js?v=20260819d";
+import { closingOverstockCost, dailyTradeProfile, optionalSpendingBudget } from "./trade-system.js?v=20260819d";
 import {
   SHOP_PROJECTS,
   SHOP_PROJECT_START_WEEK,
@@ -20,7 +20,7 @@ import {
   migrateProjectState,
   projectForWeek,
   validateProjectFunding,
-} from "./shop-project-system.js";
+} from "./shop-project-system.js?v=20260819d";
 import {
   SHOP_EXPANSIONS,
   expansionResaleValue,
@@ -29,7 +29,7 @@ import {
   saleExpansionBonus,
   sellExpansion,
   validateExpansionPurchase,
-} from "./shop-expansion-system.js";
+} from "./shop-expansion-system.js?v=20260819d";
 import {
   BENCH_JOB_COSTS,
   BENCH_JOB_DURATIONS,
@@ -46,7 +46,7 @@ import {
   REHABILITATE_VALUE_RESTORE,
   startBenchJob,
   validateBenchJob,
-} from "./care-bench-system.js";
+} from "./care-bench-system.js?v=20260819d";
 import {
   PLANT_ISSUE_TYPES,
   advancePlantHealthInventoryMorning,
@@ -60,7 +60,7 @@ import {
   treatmentForIssue,
   validatePlantFertilizer,
   validatePlantTreatment,
-} from "./plant-health-system.js";
+} from "./plant-health-system.js?v=20260819d";
 import {
   SUPPLY_CATALOG,
   assignClipGrowLight as assignSupplyClipGrowLight,
@@ -75,7 +75,7 @@ import {
   sellCustomerAddOn,
   supplyItemForId,
   validateSupplyPurchase,
-} from "./shop-supply-system.js";
+} from "./shop-supply-system.js?v=20260819d";
 import {
   askingPrice,
   calendarForDay,
@@ -84,7 +84,7 @@ import {
   generateCustomerBriefs,
   progressWeeklyObjective,
   weeklyObjectiveLabel,
-} from "./progression-system.js";
+} from "./progression-system.js?v=20260819d";
 import {
   ORDER_STATUS,
   acceptWeeklyOrder,
@@ -102,7 +102,7 @@ import {
   releaseOrderPlant,
   supplierRelationship,
   validateOrderPlant,
-} from "./neighborhood-system.js";
+} from "./neighborhood-system.js?v=20260819d";
 import {
   canBatchUnpack,
   careBloomReward,
@@ -111,7 +111,7 @@ import {
   plantSaleReadiness,
   saleBloomReward,
   sortKeyboardTargets,
-} from "./daily-flow-system.js";
+} from "./daily-flow-system.js?v=20260819d";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;

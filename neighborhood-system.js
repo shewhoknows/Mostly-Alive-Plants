@@ -1,5 +1,5 @@
-import { CUSTOMERS, PRICE_BANDS, SLOT_DATA, SPECIES } from "./game-data.js";
-import { inventoryCoversCustomers } from "./supplier-system.js";
+import { CUSTOMERS, PRICE_BANDS, SLOT_DATA, SPECIES } from "./game-data.js?v=20260819d";
+import { inventoryCoversCustomers } from "./supplier-system.js?v=20260819d";
 
 export const NEIGHBORHOOD_STATE_VERSION = 1;
 export const ORDER_STATUS = Object.freeze({

@@ -4,7 +4,7 @@ import {
   SPECIES,
   WEEKDAYS,
   WEEKLY_OBJECTIVES,
-} from "./game-data.js";
+} from "./game-data.js?v=20260819d";
 
 export const TRADE_PROFILE_VERSION = 1;
 

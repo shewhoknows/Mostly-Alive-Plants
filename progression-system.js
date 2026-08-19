@@ -6,7 +6,7 @@ import {
   SPECIES,
   WEEKDAYS,
   WEEKLY_OBJECTIVES,
-} from "./game-data.js";
+} from "./game-data.js?v=20260819d";
 
 const SPECIES_BY_ID = new Map(SPECIES.map((species) => [species.id, species]));
 const SPECIES_BY_NAME = new Map(SPECIES.map((species) => [species.name, species]));
