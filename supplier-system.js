@@ -63,6 +63,14 @@ function isAvailableForCustomers(plant) {
   return plant && !plant.benchStatus && !plant.held && plant.lifeStage !== "juvenile";
 }
 
+function isHealthyForOrder(plant) {
+  return isAvailableForCustomers(plant)
+    && !plant.needsRehabilitation
+    && !plant.healthIssue
+    && (!plant.rootComfort || plant.rootComfort === "comfortable")
+    && (!Number.isFinite(Number(plant.hydration)) || Number(plant.hydration) >= 42);
+}
+
 function minimumAskingPrice(plant, priceBand = "quick") {
   return askingPrice({ ...plant, priceBand }, plantSpecies(plant));
 }
@@ -76,16 +84,18 @@ function customerRequirement(customer) {
       ? budget
       : null,
     priceBand: PRICE_BANDS[requestedBand] ? requestedBand : "quick",
+    healthyOnly: customer?.healthyOnly === true,
   };
 }
 
 function canAssignNeeds(plants, requirements, customerIndex = 0, used = new Set()) {
   if (customerIndex >= requirements.length) return true;
-  const { need, budget, priceBand } = requirements[customerIndex];
+  const { need, budget, priceBand, healthyOnly } = requirements[customerIndex];
 
   for (let plantIndex = 0; plantIndex < plants.length; plantIndex += 1) {
     const plant = plants[plantIndex];
     if (used.has(plantIndex) || !plantTraits(plant).includes(need)) continue;
+    if (healthyOnly && !isHealthyForOrder(plant)) continue;
     if (budget !== null && minimumAskingPrice(plant, priceBand) > budget) continue;
     used.add(plantIndex);
     if (canAssignNeeds(plants, requirements, customerIndex + 1, used)) return true;
@@ -100,10 +110,11 @@ function maximumAssignedNeeds(plants, requirements) {
   const assignedRequirementByPlant = new Array(plants.length).fill(-1);
 
   function assign(requirementIndex, visitedPlants) {
-    const { need, budget, priceBand } = requirements[requirementIndex];
+    const { need, budget, priceBand, healthyOnly } = requirements[requirementIndex];
     for (let plantIndex = 0; plantIndex < plants.length; plantIndex += 1) {
       const plant = plants[plantIndex];
       if (visitedPlants.has(plantIndex) || !plantTraits(plant).includes(need)) continue;
+      if (healthyOnly && !isHealthyForOrder(plant)) continue;
       if (budget !== null && minimumAskingPrice(plant, priceBand) > budget) continue;
       visitedPlants.add(plantIndex);
       const previousRequirement = assignedRequirementByPlant[plantIndex];
@@ -144,7 +155,7 @@ function hashText(value) {
   return hash >>> 0;
 }
 
-function virtualPlants(speciesList) {
+function virtualPlants(speciesList, deliveries = []) {
   return speciesList.map((species, index) => ({
     id: `supplier-preview-${index}-${species.id}`,
     speciesId: species.id,
@@ -155,6 +166,9 @@ function virtualPlants(speciesList) {
     // the carton opening.
     price: species.price + 3,
     priceBand: "quick",
+    hydration: deliveries[index]?.condition === "stressed" ? 30 : 80,
+    rootComfort: "comfortable",
+    needsRehabilitation: deliveries[index]?.condition === "stressed",
   }));
 }
 
@@ -176,7 +190,8 @@ function inventorySignature(inventory) {
     const identity = species?.id || [...plantTraits(plant)].sort().join("+") || "unknown";
     const availability = plant?.benchStatus
       ? "bench"
-      : plant?.lifeStage === "juvenile" ? "juvenile" : "floor";
+      : plant?.held ? "held"
+        : plant?.lifeStage === "juvenile" ? "juvenile" : "floor";
     return `${identity}:${availability}`;
   }).sort().join(",");
 }
@@ -234,8 +249,9 @@ function searchCoveringSpecies({
   function compatibilityMask(plant) {
     const traits = plantTraits(plant);
     let mask = 0;
-    requirements.forEach(({ need, budget, priceBand }, requirementIndex) => {
+    requirements.forEach(({ need, budget, priceBand, healthyOnly }, requirementIndex) => {
       if (!traits.includes(need)) return;
+      if (healthyOnly && !isHealthyForOrder(plant)) return;
       if (budget !== null && minimumAskingPrice(plant, priceBand) > budget) return;
       mask |= 1 << requirementIndex;
     });
@@ -373,9 +389,10 @@ function configuredQuantityForLot(type, { day, customers, inventory, capacity })
   const availableStock = inventory.filter(isAvailableForCustomers);
   const covered = maximumAssignedNeeds(availableStock, customers.map(customerRequirement));
   const requiredTopUp = Math.max(0, customers.length - covered);
-  if (type.id === "curated-pair") return recommended > 0 ? Math.min(7, Math.max(2, requiredTopUp, recommended)) : 2;
-  if (type.id === "mystery-rescue-lot") return recommended > 0 ? Math.min(7, Math.max(requiredTopUp, recommended + 1)) : Math.max(4, requiredTopUp);
-  return recommended > 0 ? Math.min(7, Math.max(3, requiredTopUp, recommended)) : Math.max(3, requiredTopUp);
+  const shipmentLimit = Math.min(capacity, Math.max(7, customers.length));
+  if (type.id === "curated-pair") return recommended > 0 ? Math.min(shipmentLimit, Math.max(2, requiredTopUp, recommended)) : Math.max(2, requiredTopUp);
+  if (type.id === "mystery-rescue-lot") return recommended > 0 ? Math.min(shipmentLimit, Math.max(requiredTopUp, recommended + 1)) : Math.max(4, requiredTopUp);
+  return recommended > 0 ? Math.min(shipmentLimit, Math.max(3, requiredTopUp, recommended)) : Math.max(3, requiredTopUp);
 }
 
 function chooseLotSpecies(type, { day, customers, inventory, capacity }) {
@@ -463,7 +480,7 @@ function revealMetadata(type, speciesList) {
   };
 }
 
-function supplierLot(type, { day, customers, inventory, coins, capacity }) {
+function supplierLot(type, { day, customers, inventory, coins, capacity, orderNeed }) {
   const chosen = chooseLotSpecies(type, { day, customers, inventory, capacity });
   const { speciesList } = chosen;
   const quantity = speciesList.length;
@@ -474,7 +491,7 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
   const affordable = coins >= cost;
   const fitsCapacity = inventory.length + quantity <= capacity;
   const coversRequests = chosen.coversRequests && inventoryCoversCustomers(
-    [...inventory, ...virtualPlants(speciesList)],
+    [...inventory, ...virtualPlants(speciesList, manifest.deliveries)],
     customers,
   );
   const uniqueSpeciesCount = new Set(speciesList.map((species) => species.id)).size;
@@ -495,6 +512,11 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
           : `${quantity === 1 ? "One plant" : `${quantity} plants`} selected as a shelf-space top-up.`
         : lotDescription(type, quantity, manifest),
       hardshipCredit ? "The nursery has put this one on a pay-what-you-can rescue tab." : "",
+      orderNeed?.count
+        ? coversRequests
+          ? `It also secures ${orderNeed.count} healthy ${orderNeed.trait} ${orderNeed.count === 1 ? "plant" : "plants"} for the Friday order.`
+          : `It does not secure the remaining Friday order stock.`
+        : "",
     ].filter(Boolean).join(" "),
     speciesNames: speciesList.map((species) => species.name),
     speciesIds: speciesList.map((species) => species.id),
@@ -519,6 +541,9 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
     nurseryCost,
     uniqueSpeciesCount,
     newSpeciesCount,
+    orderReady: orderNeed?.count ? coversRequests : null,
+    orderNeeded: orderNeed?.count || 0,
+    orderRequiredTrait: orderNeed?.trait || null,
   };
 }
 
@@ -648,6 +673,26 @@ function noPurchaseFallback(day, inventory, customers, capacity) {
   };
 }
 
+function activeOrderNeed(weeklyOrder, day) {
+  if (!weeklyOrder || weeklyOrder.status !== "active" || Number(day) > Number(weeklyOrder.deadlineDay)) return null;
+  const quantity = Math.max(0, Math.floor(Number(weeklyOrder.quantity) || 0));
+  const held = Array.isArray(weeklyOrder.heldPlantIds) ? weeklyOrder.heldPlantIds.length : 0;
+  const count = Math.max(0, quantity - held);
+  const trait = typeof weeklyOrder.requiredTrait === "string" ? weeklyOrder.requiredTrait : null;
+  return count > 0 && trait ? { count, trait } : null;
+}
+
+function orderRequirements(orderNeed) {
+  if (!orderNeed) return [];
+  return Array.from({ length: orderNeed.count }, (_, index) => ({
+    id: `weekly-order-stock-${index}`,
+    need: orderNeed.trait,
+    budget: null,
+    objectivePriceBand: "quick",
+    healthyOnly: true,
+  }));
+}
+
 /**
  * Generates three deterministic supplier cards. Rare Nursery Membership adds
  * one specialist card. When current stock can already serve the full customer
@@ -660,15 +705,31 @@ export function generateSupplierLots({
   coins = 0,
   capacity = INVENTORY_CAPACITY,
   rareNursery = false,
+  weeklyOrder = null,
 } = {}) {
   const safeDay = Math.max(1, Math.floor(Number(day) || 1));
   const safeCoins = Math.max(0, Math.floor(Number(coins) || 0));
   const safeCustomers = Array.isArray(customers) ? customers : [];
   const safeInventory = Array.isArray(inventory) ? inventory : [];
   const safeCapacity = Math.max(INVENTORY_CAPACITY, Math.floor(Number(capacity) || INVENTORY_CAPACITY));
-  const input = { day: safeDay, customers: safeCustomers, inventory: safeInventory, coins: safeCoins, capacity: safeCapacity };
+  const orderNeed = activeOrderNeed(weeklyOrder, safeDay);
+  const planningCustomers = [...safeCustomers, ...orderRequirements(orderNeed)];
+  const input = {
+    day: safeDay,
+    customers: planningCustomers,
+    inventory: safeInventory,
+    coins: safeCoins,
+    capacity: safeCapacity,
+    orderNeed,
+  };
   const lots = SUPPLIER_TYPES.map((type) => supplierLot(type, input));
   if (rareNursery === true) lots.push(rareNurseryLot(input));
   const fallback = noPurchaseFallback(safeDay, safeInventory, safeCustomers, safeCapacity);
+  if (fallback && orderNeed) {
+    fallback.orderReady = false;
+    fallback.orderNeeded = orderNeed.count;
+    fallback.orderRequiredTrait = orderNeed.trait;
+    fallback.description += ` This covers today's visitors, but it does not add the ${orderNeed.count} healthy ${orderNeed.trait} ${orderNeed.count === 1 ? "plant" : "plants"} still needed for Friday.`;
+  }
   return fallback ? [...lots, fallback] : lots;
 }

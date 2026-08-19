@@ -666,6 +666,7 @@ document.addEventListener("DOMContentLoaded", () => {
       coins: state.coins,
       capacity: state.inventoryCapacity,
       rareNursery: hasExpansion("rare-nursery"),
+      weeklyOrder: state.neighborhoodState?.order,
     }), state.neighborhoodState, state.coins);
   }
 
@@ -2386,6 +2387,17 @@ document.addEventListener("DOMContentLoaded", () => {
         uncovered.className = "supplier-badge";
         uncovered.textContent = "Does not cover all notes";
         badges.append(uncovered);
+      }
+      if (lot.orderReady === true) {
+        const secured = document.createElement("span");
+        secured.className = "supplier-badge supplier-badge-order";
+        secured.textContent = "Friday order stock secured";
+        badges.append(secured);
+      } else if (lot.orderReady === false && lot.orderNeeded > 0) {
+        const orderMissing = document.createElement("span");
+        orderMissing.className = "supplier-badge";
+        orderMissing.textContent = `Friday order still needs ${lot.orderNeeded}`;
+        badges.append(orderMissing);
       }
       button.append(header, copy, contents, badges);
       button.addEventListener("click", () => chooseSupplierLot(lot, button));

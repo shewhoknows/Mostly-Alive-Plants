@@ -274,3 +274,12 @@
 - Added **Start over** to the title screen when a valid browser save exists. It opens a clear confirmation step, deletes only the `Mostly Alive Plants` save, and reloads a fresh Day 1 shop.
 - Corrected the fresh title state. A browser with no saved game now says **Start the day** even though the new shop already contains its two starter plants.
 - Added a release cache key to the main style and game files so this control appears at once after the GitHub Pages update.
+
+## 2026-08-19 — Guaranteed weekly-order stock
+
+- Added accepted weekly orders to the morning shipment plan. The planner now assigns distinct plants to today’s visitors and to every unfilled Friday-order place.
+- Weekly-order plants must be healthy. Nursery stress, pests, fungus, root stress, low hydration, active bench work, juveniles, and existing Holds cannot satisfy the protected order need.
+- Supplier cards now state when a shipment secures the Friday order stock. A card that only covers today’s visitors gives a clear warning.
+- Kept **Use Current Stock** as a safe daily option. A full shop can still open even when it has no room for optional order stock.
+- Added a Week 2 regression test for every morning after order acceptance. At least one selectable shipment must cover the daily queue and the full healthy order quantity with distinct plants.
+- Supplier, neighborhood, syntax, and whitespace checks passed. The 300-pass supplier test had a 3.2 ms worst pass.

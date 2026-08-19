@@ -10,6 +10,7 @@ import {
   inventoryCoversCustomers,
 } from "./supplier-system.js";
 import { dailyTradeProfile } from "./trade-system.js";
+import { ORDER_STATUS, createDefaultNeighborhoodState } from "./neighborhood-system.js";
 
 const speciesById = new Map(SPECIES.map((species) => [species.id, species]));
 
@@ -27,7 +28,11 @@ function plantRecord(species, index, extra = {}) {
 function previewInventory(lot) {
   return lot.speciesIds.map((speciesId, index) => {
     const species = speciesById.get(speciesId);
-    return plantRecord(species, `preview-${index}`);
+    return plantRecord(species, `preview-${index}`, {
+      hydration: lot.deliveries?.[index]?.condition === "stressed" ? 30 : 80,
+      rootComfort: "comfortable",
+      needsRehabilitation: lot.deliveries?.[index]?.condition === "stressed",
+    });
   });
 }
 
@@ -199,6 +204,37 @@ assert.equal(signRescue.selectable, true);
 assert.equal(inventoryCoversCustomers(previewInventory(signRescue), signCustomers), true);
 assert.equal(signRescue.stressedQuantity, 3);
 assert.equal(signRescue.healthyQuantity, 4);
+
+const weekTwoOrder = createDefaultNeighborhoodState({ day: 6 }).order;
+weekTwoOrder.status = ORDER_STATUS.ACTIVE;
+weekTwoOrder.acceptedDay = 6;
+for (let day = 7; day <= weekTwoOrder.deadlineDay; day += 1) {
+  const profile = dailyTradeProfile({ day, inventoryCount: 0, capacity: 16 });
+  const customers = generateCustomerBriefs({ day, count: profile.visitorCount, inventory: [], capacity: 16 });
+  const lots = generateSupplierLots({
+    day,
+    customers,
+    inventory: [],
+    coins: 999,
+    capacity: 16,
+    weeklyOrder: weekTwoOrder,
+  });
+  const safeLot = lots.find((lot) => lot.selectable && lot.orderReady === true);
+  assert.ok(safeLot, `Day ${day} must offer healthy stock for the accepted Friday order.`);
+  const combinedNeeds = [
+    ...customers,
+    ...Array.from({ length: weekTwoOrder.quantity }, (_, index) => ({
+      id: `order-${index}`,
+      need: weekTwoOrder.requiredTrait,
+      healthyOnly: true,
+    })),
+  ];
+  assert.equal(
+    inventoryCoversCustomers(previewInventory(safeLot), combinedNeeds),
+    true,
+    `Day ${day} order-ready lot must cover visitors and distinct healthy order stock.`,
+  );
+}
 
 const curatedCarryStock = Array.from({ length: 10 }, (_, index) => plantRecord(SPECIES[index], `carry-${index}`));
 const curatedCarryProfile = dailyTradeProfile({ day: 20, inventoryCount: curatedCarryStock.length, capacity: 20 });
