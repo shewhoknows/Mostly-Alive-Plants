@@ -283,3 +283,12 @@
 - Kept **Use Current Stock** as a safe daily option. A full shop can still open even when it has no room for optional order stock.
 - Added a Week 2 regression test for every morning after order acceptance. At least one selectable shipment must cover the daily queue and the full healthy order quantity with distinct plants.
 - Supplier, neighborhood, syntax, and whitespace checks passed. The 300-pass supplier test had a 3.2 ms worst pass.
+
+## 2026-08-19 — One plant selection and desktop Arrange controls
+
+- Unified the shop, Care Bench, and Retail Supply Shelf around one current plant. Opening the Care Bench now keeps the plant selected in the room. Choosing another plant in the bench also updates the room selection.
+- Fixed keyboard selection during a move. Pressing `Q` now cancels the old move before it selects a different plant, so the shown plant and the moved plant cannot disagree.
+- Restored the selected plant after a 3D plant rebuild. Fertilizer, treatments, Clip Grow Lights, Care Bench changes, and fixture changes no longer leave a stale 3D selection reference.
+- Added a desktop Arrange bar. It names the plant that is moving, explains where it can go, and provides **Cancel move** and **Done** controls.
+- Kept the new bar desktop-only. The mobile HUD was not changed in this milestone.
+- Daily-flow, Care Bench, Retail Supply Shelf, JavaScript syntax, DOM ID, and whitespace checks passed.

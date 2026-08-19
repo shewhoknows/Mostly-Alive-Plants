@@ -625,6 +625,11 @@ document.addEventListener("DOMContentLoaded", () => {
     completeWeeklyOrder: $("complete-weekly-order"),
     rehabilitationStationLabel: $("rehabilitation-station-label"),
     rehabilitationStationStatus: $("rehabilitation-station-status"),
+    arrangeBar: $("arrange-bar"),
+    arrangeMovingName: $("arrange-moving-name"),
+    arrangeGuidance: $("arrange-guidance"),
+    cancelArrangeMove: $("cancel-arrange-move"),
+    finishArranging: $("finish-arranging"),
     soundButton: $("sound-button"),
     helpButton: $("help-button"),
     helpModal: $("help-modal"),
@@ -2030,7 +2035,13 @@ document.addEventListener("DOMContentLoaded", () => {
       world.add(object);
       plantObjects.set(plant.id, object);
     });
+    if (run.selected?.kind === "plant") {
+      const selectedObject = plantObjects.get(run.selected.id);
+      if (selectedObject) run.selected.object = selectedObject;
+      else run.selected = null;
+    }
     updateSlotGlow();
+    updateSelectionRing();
   }
 
   function disposeObject3D(object) {
@@ -2177,14 +2188,22 @@ document.addEventListener("DOMContentLoaded", () => {
       updateUi();
     });
     ui.arrangeButton?.addEventListener("click", toggleArrangement);
+    ui.cancelArrangeMove?.addEventListener("click", () => {
+      const plant = state.inventory.find((item) => item.id === run.carried);
+      cancelMove();
+      sound("place");
+      toast(plant ? `${plant.species} stays where it was.` : "No plant is moving.");
+      updateUi();
+    });
+    ui.finishArranging?.addEventListener("click", finishArrangement);
     CARES.forEach((care) => ui.care[care]?.addEventListener("click", () => careForPlant(care)));
     ui.priceButtons.forEach((button) => button.addEventListener("click", () => setPriceBand(button.dataset.priceBand)));
     ui.nextDay?.addEventListener("click", nextDay);
     ui.upgradeButton?.addEventListener("click", () => openModal(ui.upgradeModal, true));
     ui.projectFund?.addEventListener("click", fundCurrentProject);
     ui.closeUpgrades?.addEventListener("click", () => openModal(ui.upgradeModal, false));
-    ui.benchButton?.addEventListener("click", () => openModal(ui.benchModal, true));
-    ui.benchOverview?.addEventListener("click", () => openModal(ui.benchModal, true));
+    ui.benchButton?.addEventListener("click", openCareBench);
+    ui.benchOverview?.addEventListener("click", openCareBench);
     ui.closeBench?.addEventListener("click", () => openModal(ui.benchModal, false));
     ui.supplyButton?.addEventListener("click", () => openModal(ui.supplyModal, true));
     ui.closeSupply?.addEventListener("click", () => openModal(ui.supplyModal, false));
@@ -2510,6 +2529,17 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
+  function finishArrangement() {
+    if (state.phase === "supply" || state.phase === "report" || run.busy) return;
+    cancelMove();
+    run.arranging = false;
+    sound("place");
+    toast(state.phase === "preparation"
+      ? "Displays marked ready. Use Open the shop when today’s notes are covered."
+      : "Arrangement mode off. Placed plants can be offered again.");
+    updateUi();
+  }
+
   function openModal(element, open) {
     if (!element) return;
     if (open && (run.busy || run.customerTween) && [ui.helpModal, ui.upgradeModal, ui.benchModal, ui.supplyModal, ui.weeklyOrderModal].includes(element)) {
@@ -2661,6 +2691,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const rehabilitationJobs = jobs.filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE);
     const careBenchJobs = jobs.filter((job) => job.type !== BENCH_JOB_TYPES.REHABILITATE);
     const availablePlants = state.inventory.filter((plant) => !plant.benchStatus);
+    if (availablePlants.some((plant) => plant.id === run.lastPlantId)) {
+      run.benchPlantId = run.lastPlantId;
+    }
     if (!availablePlants.some((plant) => plant.id === run.benchPlantId)) {
       run.benchPlantId = availablePlants[0]?.id || null;
     }
@@ -2715,6 +2748,12 @@ document.addEventListener("DOMContentLoaded", () => {
       button.append(name, detail);
       button.addEventListener("click", () => {
         run.benchPlantId = plant.id;
+        run.lastPlantId = plant.id;
+        const object = plantObjects.get(plant.id);
+        if (object) {
+          run.selected = { kind: "plant", id: plant.id, object };
+          document.body.dataset.selection = "plant";
+        }
         run.benchMessage = `${plant.species} selected. Choose one job.`;
         renderBench();
       });
@@ -2805,6 +2844,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.coins = result.coins;
     state.bloom = result.bloom;
     run.benchPlantId = null;
+    if (run.lastPlantId === plant.id) run.lastPlantId = null;
     run.benchMessage = result.message;
     run.selected = null;
     run.carried = null;
@@ -3991,18 +4031,25 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
-  function selectEntity(entity, object) {
+  function selectEntity(entity, object, { source = "pointer" } = {}) {
+    if (source === "keyboard" && run.carried && (entity.kind !== "plant" || entity.id !== run.carried)) {
+      cancelMove();
+    }
     run.selected = { ...entity, object };
     document.body.dataset.selection = entity.kind;
     if (entity.kind === "plant") {
       run.deliveryOverviewPlantIds = [];
       const plant = state.inventory.find((item) => item.id === entity.id);
-      if (plant && !plant.benchStatus) run.lastPlantId = plant.id;
+      if (plant && !plant.benchStatus) {
+        run.lastPlantId = plant.id;
+        run.benchPlantId = plant.id;
+      }
       const comparingSwap = run.carried && run.carried !== plant?.id && (run.arranging || state.phase === "preparation");
       if (!comparingSwap) {
         run.carried = plant && !Number.isInteger(plant.slot) ? plant.id : null;
         if (!run.carried) run.moveOrigin = null;
       }
+      if (run.carried && state.phase === "preparation") run.arranging = true;
       sound("pluck");
     } else if (entity.kind !== "slot") {
       cancelMove();
@@ -4036,9 +4083,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return plant && !plant.benchStatus ? plant : null;
   }
 
+  function openCareBench() {
+    const selectedPlant = state.inventory.find((plant) => plant.id === run.lastPlantId && !plant.benchStatus);
+    if (selectedPlant) run.benchPlantId = selectedPlant.id;
+    openModal(ui.benchModal, true);
+  }
+
   function openCareBenchFromRoom() {
     canvas.focus({ preventScroll: true });
-    openModal(ui.benchModal, true);
+    openCareBench();
   }
 
   function useWateringCan() {
@@ -4093,6 +4146,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function beginMove(plant) {
     if (!plant || plant.benchStatus) return;
+    run.arranging = true;
     if (!Number.isInteger(plant.slot)) {
       run.carried = plant.id;
       run.moveOrigin = null;
@@ -5288,11 +5342,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (ui.arrangeButton) {
-      const active = state.phase === "preparation" || run.arranging;
+      const active = run.arranging;
       ui.arrangeButton.hidden = !run.started || state.phase === "supply" || state.phase === "preparation" || state.phase === "report";
       ui.arrangeButton.setAttribute("aria-pressed", String(active));
       ui.arrangeButton.classList.toggle("is-active", active);
       ui.arrangeButton.title = active ? "Finish arranging displays" : "Arrange displays";
+    }
+    if (ui.arrangeBar) {
+      const movingPlant = state.inventory.find((plant) => plant.id === run.carried);
+      const showArrangeBar = run.started
+        && state.phase !== "supply"
+        && state.phase !== "report"
+        && (run.arranging || Boolean(movingPlant));
+      ui.arrangeBar.hidden = !showArrangeBar;
+      if (ui.arrangeMovingName) ui.arrangeMovingName.textContent = movingPlant
+        ? `Moving ${movingPlant.species}`
+        : "Choose a plant to move";
+      if (ui.arrangeGuidance) ui.arrangeGuidance.textContent = movingPlant
+        ? "Choose a green display ring, or choose another plant to swap."
+        : "Select a placed plant, then use Move this plant.";
+      if (ui.cancelArrangeMove) ui.cancelArrangeMove.disabled = !movingPlant;
     }
     if (ui.benchButton) {
       const jobs = state.benchState?.jobs?.length || 0;
@@ -5606,7 +5675,7 @@ document.addEventListener("DOMContentLoaded", () => {
       else placePlant(run.carried, entity.id);
       return;
     }
-    selectEntity(entity, object);
+    selectEntity(entity, object, { source: "pointer" });
   }
 
   function wheel(event) {
@@ -5710,7 +5779,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const object = candidates[nextIndex];
     run.keyboardIndex = nextIndex;
     const entity = object.userData.entity;
-    selectEntity(entity, object);
+    selectEntity(entity, object, { source: "keyboard" });
     const plant = entity.kind === "plant" ? state.inventory.find((item) => item.id === entity.id) : null;
     const label = plant?.species || object.userData.stationLabel || (entity.kind === "crate" ? "cartons" : entity.kind);
     toast(`Selected ${label}. Press E to act.`, 1700);

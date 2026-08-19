@@ -349,6 +349,7 @@ h1 span {
 .customer-card,
 .care-tray,
 .price-tray,
+.arrange-bar,
 .camera-tip {
   pointer-events: auto;
 }
@@ -1224,6 +1225,76 @@ body[data-selection="plant"] .task-card .bench-overview {
   align-items: flex-end;
   gap: 0.6rem;
   pointer-events: auto;
+}
+
+.arrange-bar {
+  display: none;
+}
+
+@media (min-width: 52.01rem) and (min-height: 38rem) {
+  .arrange-bar:not([hidden]) {
+    position: absolute;
+    bottom: calc(var(--safe-bottom) + 0.1rem);
+    left: 50%;
+    display: flex;
+    width: min(27rem, calc(100vw - 34rem));
+    min-width: 22rem;
+    min-height: 3.65rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.55rem 0.62rem 0.55rem 0.82rem;
+    border: 1px solid rgba(32, 58, 44, 0.42);
+    border-radius: 0.9rem 0.9rem 1.3rem 0.9rem;
+    color: var(--ink);
+    background: rgba(242, 237, 220, 0.96);
+    box-shadow: 0 0.5rem 1.6rem rgba(32, 58, 44, 0.18), 0 0.24rem 0 var(--sun);
+    translate: -50% 0;
+    backdrop-filter: blur(14px);
+  }
+
+  .arrange-bar-copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.12rem;
+  }
+
+  .arrange-bar-copy > span {
+    color: var(--fern);
+    font-size: 0.48rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .arrange-bar-copy strong,
+  .arrange-bar-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .arrange-bar-copy strong {
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 0.82rem;
+  }
+
+  .arrange-bar-copy small {
+    color: rgba(32, 58, 44, 0.68);
+    font-size: 0.5rem;
+  }
+
+  .arrange-bar-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.38rem;
+  }
+
+  .arrange-bar-actions .button {
+    min-height: 2.45rem;
+    padding: 0.48rem 0.68rem;
+    font-size: 0.58rem;
+  }
 }
 
 .button-action {
