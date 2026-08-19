@@ -224,13 +224,14 @@ This created the first complete management chain using the original room and car
 - **Neighborhood commitments milestone — complete:** exact sale follow-ups, one optional weekly order, Held stock, small positive or neutral events, and three supplier relationship levels.
 - **Catalog expansion — complete:** six later-week standard plants bring the catalog to 26 distinct species.
 - **Stock-flow and specialist-capacity milestone — complete:** shelf capacity now preserves a larger sale range, Curated deliveries refill it, Rescue deliveries limit nursery stress to two or three plants, and Rehabilitation has its own two-to-three-place capacity.
+- **Daily Flow and Clarity milestone — complete:** plant-first keyboard selection, a direct sale-readiness checklist, explicit soil and customer blockers, Day-6 batch carton opening with a delivery overview, supplier novelty and variety targets, a clear Rehabilitation Bloom reward, and saved-day title copy.
 - Add new shelf modules and movable display fixtures. The first four-slot shelf module is complete.
 - Add upgrade branches that change the room and shop routine. The first six-item permanent branch is complete.
 - Add seasonal demand, larger contracts, and a modest shop expansion.
 
 ## Recommended next implementation slice
 
-The next bounded step is a species journal and custom presentation:
+The next bounded step remains a species journal and custom presentation. It should start only after a second black-box test confirms that Day 10 is clear and that the current economy targets still create useful choices:
 
 1. add a journal that records each owned and sold species, its care facts, and its best sale result;
 2. add a small set of decorative pots with clear coin costs and bounded presentation bonuses;

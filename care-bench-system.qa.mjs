@@ -10,6 +10,7 @@ import {
   PROPAGATION_MATURITY_DAYS,
   REHABILITATE_PROTECTION_DAYS,
   REHABILITATE_VALUE_RESTORE,
+  REHABILITATION_BLOOM_REWARD,
   REHABILITATION_BASE_SLOTS,
   REHABILITATION_UPGRADE_SLOTS,
   REPOT_VALUE_BONUS,
@@ -22,6 +23,7 @@ import {
 import { SPECIES } from "./game-data.js";
 
 const fern = SPECIES.find((species) => species.name === "Button Fern") || SPECIES[0];
+assert.equal(REHABILITATION_BLOOM_REWARD, 3);
 
 function plant(id, overrides = {}) {
   return {

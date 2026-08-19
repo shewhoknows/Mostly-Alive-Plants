@@ -181,8 +181,11 @@ function inventorySignature(inventory) {
   }).sort().join(",");
 }
 
-function deterministicSpeciesOrder(speciesPool, seedKey, type, suffix = "") {
+function deterministicSpeciesOrder(speciesPool, seedKey, type, suffix = "", inventory = []) {
+  const ownedSpecies = new Set(inventory.map((plant) => plantSpecies(plant)?.id).filter(Boolean));
   return [...speciesPool].sort((left, right) => {
+    const noveltyDifference = Number(ownedSpecies.has(left.id)) - Number(ownedSpecies.has(right.id));
+    if (noveltyDifference) return noveltyDifference;
     if (type.id === "mystery-rescue-lot") {
       const costDifference = left.wholesaleCost - right.wholesaleCost;
       if (costDifference) return costDifference;
@@ -193,9 +196,9 @@ function deterministicSpeciesOrder(speciesPool, seedKey, type, suffix = "") {
   });
 }
 
-function deterministicFallbackSpecies(speciesPool, quantity, allowDuplicates, seedKey, type) {
+function deterministicFallbackSpecies(speciesPool, quantity, allowDuplicates, seedKey, type, inventory = []) {
   if (!quantity || !speciesPool.length) return [];
-  const ordered = deterministicSpeciesOrder(speciesPool, seedKey, type, "fallback");
+  const ordered = deterministicSpeciesOrder(speciesPool, seedKey, type, "fallback", inventory);
   if (!allowDuplicates) return ordered.slice(0, quantity);
   return Array.from({ length: quantity }, (_, index) => {
     const choice = hashText(`${seedKey}|fallback-slot|${index}`) % ordered.length;
@@ -218,7 +221,7 @@ function searchCoveringSpecies({
   if (availableInventory.length + quantity < requirements.length) return null;
   if (!quantity) return maximumAssignedNeeds(availableInventory, requirements) === requirements.length ? [] : null;
 
-  const orderedSpecies = deterministicSpeciesOrder(speciesPool, seedKey, type, "search");
+  const orderedSpecies = deterministicSpeciesOrder(speciesPool, seedKey, type, "search", inventory);
   if (!orderedSpecies.length || (!allowDuplicates && quantity > orderedSpecies.length)) return null;
 
   // A supplier lot never needs to cover more than the day's visitor queue.
@@ -273,6 +276,9 @@ function searchCoveringSpecies({
 
   function earlierPath(candidate, current) {
     if (current === null) return true;
+    const candidateVariety = new Set(candidate).size;
+    const currentVariety = new Set(current).size;
+    if (candidateVariety !== currentVariety) return candidateVariety > currentVariety;
     for (let index = 0; index < candidate.length; index += 1) {
       if (candidate[index] !== current[index]) return candidate[index] < current[index];
     }
@@ -351,7 +357,7 @@ function chooseSpecies(type, day, customers, inventory, quantity = type.quantity
   }
 
   if (!speciesList) {
-    const fallback = deterministicFallbackSpecies(speciesPool, quantity, true, seedKey, type);
+    const fallback = deterministicFallbackSpecies(speciesPool, quantity, true, seedKey, type, inventory);
     return { speciesList: fallback, duplicatePreferenceRelaxed, coversRequests: false };
   }
 
@@ -471,6 +477,11 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
     [...inventory, ...virtualPlants(speciesList)],
     customers,
   );
+  const uniqueSpeciesCount = new Set(speciesList.map((species) => species.id)).size;
+  const ownedSpeciesIds = new Set(inventory.map((plant) => plantSpecies(plant)?.id).filter(Boolean));
+  const newSpeciesCount = new Set(speciesList
+    .filter((species) => !ownedSpeciesIds.has(species.id))
+    .map((species) => species.id)).size;
 
   return {
     id: `day-${String(day).padStart(3, "0")}-${type.id}`,
@@ -506,6 +517,8 @@ function supplierLot(type, { day, customers, inventory, coins, capacity }) {
     configuredQuantity: chosen.configuredQuantity,
     hardshipCredit,
     nurseryCost,
+    uniqueSpeciesCount,
+    newSpeciesCount,
   };
 }
 
@@ -525,7 +538,7 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
   const configuredQuantity = Math.min(8, Math.max(3, customers.length - assignedNeeds + 1));
   const quantity = Math.min(configuredQuantity, freeCapacity);
   const rareCount = Math.min(SPECIAL_SPECIES.length, quantity > 1 ? 1 : quantity);
-  const rareSpecies = deterministicFallbackSpecies(SPECIAL_SPECIES, rareCount, false, `${seedKey}|special`, type);
+  const rareSpecies = deterministicFallbackSpecies(SPECIAL_SPECIES, rareCount, false, `${seedKey}|special`, type, inventory);
   const commonPool = availableSpeciesForWeek(week);
   const commonQuantity = Math.max(0, quantity - rareSpecies.length);
   const inventoryWithRare = [...inventory, ...virtualPlants(rareSpecies)];
@@ -543,6 +556,7 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
     true,
     `${seedKey}|common-fallback`,
     RARE_NURSERY_FILL_TYPE,
+    inventoryWithRare,
   );
   const speciesList = [...rareSpecies, ...commonSpecies];
   const manifest = deliveryManifest(type, speciesList);
@@ -554,6 +568,11 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
     customers,
   );
   const capacityAdjusted = speciesList.length !== configuredQuantity;
+  const uniqueSpeciesCount = new Set(speciesList.map((species) => species.id)).size;
+  const ownedSpeciesIds = new Set(inventory.map((plant) => plantSpecies(plant)?.id).filter(Boolean));
+  const newSpeciesCount = new Set(speciesList
+    .filter((species) => !ownedSpeciesIds.has(species.id))
+    .map((species) => species.id)).size;
 
   return {
     id: `day-${String(day).padStart(3, "0")}-${type.id}`,
@@ -590,6 +609,8 @@ function rareNurseryLot({ day, customers, inventory, coins, capacity }) {
     rareCollection: true,
     rareSpeciesCount: rareSpecies.length,
     specialAccessRequired: true,
+    uniqueSpeciesCount,
+    newSpeciesCount,
   };
 }
 

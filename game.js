@@ -36,6 +36,7 @@ import {
   BENCH_JOB_TYPES,
   CARE_BENCH_BASE_SLOTS,
   REHABILITATION_BASE_SLOTS,
+  REHABILITATION_BLOOM_REWARD,
   REHABILITATION_UPGRADE_SLOTS,
   advanceAndApplyBenchJobs,
   createDefaultBenchState,
@@ -101,6 +102,11 @@ import {
   supplierRelationship,
   validateOrderPlant,
 } from "./neighborhood-system.js";
+import {
+  canBatchUnpack,
+  plantSaleReadiness,
+  sortKeyboardTargets,
+} from "./daily-flow-system.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = THREE.MathUtils.clamp;
@@ -487,6 +493,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const ui = {
     title: $("title-screen") || document.querySelector(".title-screen"),
     start: $("start-game") || document.querySelector(".primary-button"),
+    startLabel: $("start-game-label"),
+    titleSaveDay: $("title-save-day"),
     loading: $("loading-progress") || $("status"),
     game: $("game-ui"),
     day: $("topbar-day"),
@@ -496,6 +504,11 @@ document.addEventListener("DOMContentLoaded", () => {
     taskCard: document.querySelector(".task-card"),
     taskTitle: $("task-title"),
     taskCopy: $("task-copy"),
+    plantReadiness: $("plant-readiness"),
+    plantReadinessTitle: $("plant-readiness-title"),
+    plantReadinessState: $("plant-readiness-state"),
+    plantReadinessList: $("plant-readiness-list"),
+    plantReadinessSummary: $("plant-readiness-summary"),
     weekObjective: $("week-objective"),
     tradeDemand: $("trade-demand"),
     tradeCost: $("trade-cost"),
@@ -508,6 +521,11 @@ document.addEventListener("DOMContentLoaded", () => {
     weeklyOrderStripProgress: $("weekly-order-strip-progress"),
     weeklyOrderStripDeadline: $("weekly-order-strip-deadline"),
     openShop: $("open-shop-button"),
+    openAllCartons: $("open-all-cartons"),
+    deliveryOverview: $("delivery-overview"),
+    deliveryOverviewTitle: $("delivery-overview-title"),
+    deliveryOverviewList: $("delivery-overview-list"),
+    closeDeliveryOverview: $("close-delivery-overview"),
     action: $("action-button"),
     careTray: $("care-tray"),
     care: { water: $("care-water"), mist: $("care-mist"), prune: $("care-prune") },
@@ -706,6 +724,10 @@ document.addEventListener("DOMContentLoaded", () => {
     moveOrigin: null,
     crate: null,
     crateAnimation: null,
+    batchUnpackActive: false,
+    batchUnpackSpecies: [],
+    batchUnpackPlantIds: [],
+    deliveryOverviewPlantIds: [],
     customer: null,
     customerTween: null,
     moth: null,
@@ -745,6 +767,11 @@ document.addEventListener("DOMContentLoaded", () => {
   canvas.style.touchAction = "none";
 
   setupDay();
+  const titleCalendar = calendarForDay(state.day);
+  if (ui.titleSaveDay) ui.titleSaveDay.textContent = `${titleCalendar.weekday} · Day ${String(state.day).padStart(2, "0")}`;
+  if (ui.startLabel && (state.day > 1 || state.inventory.length || state.phase !== "supply")) {
+    ui.startLabel.textContent = `Continue Day ${state.day}`;
+  }
   bindUi();
   resize();
   loadShop();
@@ -2118,6 +2145,11 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.start?.addEventListener("click", startGame);
     ui.action?.addEventListener("click", doAction);
     ui.openShop?.addEventListener("click", openShop);
+    ui.openAllCartons?.addEventListener("click", unpackAllCartons);
+    ui.closeDeliveryOverview?.addEventListener("click", () => {
+      run.deliveryOverviewPlantIds = [];
+      updateUi();
+    });
     ui.arrangeButton?.addEventListener("click", toggleArrangement);
     CARES.forEach((care) => ui.care[care]?.addEventListener("click", () => careForPlant(care)));
     ui.priceButtons.forEach((button) => button.addEventListener("click", () => setPriceBand(button.dataset.priceBand)));
@@ -2301,6 +2333,17 @@ document.addEventListener("DOMContentLoaded", () => {
       capacity.className = "supplier-badge";
       capacity.textContent = fits ? `${lot.speciesNames?.length || 0} spaces used` : "Not enough space";
       badges.append(condition, capacity);
+      if (lot.speciesNames?.length) {
+        const variety = document.createElement("span");
+        variety.className = "supplier-badge";
+        const deliveredSpecies = lot.speciesIds || [];
+        const ownedSpecies = new Set(state.inventory.map((plant) => plant.speciesId));
+        const uniqueSpeciesCount = lot.uniqueSpeciesCount ?? new Set(deliveredSpecies).size;
+        const newSpeciesCount = lot.newSpeciesCount
+          ?? new Set(deliveredSpecies.filter((speciesId) => !ownedSpecies.has(speciesId))).size;
+        variety.textContent = `${uniqueSpeciesCount} unique · ${newSpeciesCount} new`;
+        badges.append(variety);
+      }
       if (lot.rareCollection) {
         const rareBadge = document.createElement("span");
         rareBadge.className = "supplier-badge supplier-badge-rare";
@@ -2486,7 +2529,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     [BENCH_JOB_TYPES.REHABILITATE]: {
       name: "Rehabilitate",
-      copy: "Clear nursery stress, restore lost sale value, and protect the plant for two days.",
+      copy: `Clear nursery stress, restore lost sale value, protect the plant for two days, and earn ${REHABILITATION_BLOOM_REWARD} Bloom.`,
     },
     [BENCH_JOB_TYPES.PROPAGATE]: {
       name: "Propagate",
@@ -2507,7 +2550,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (job.type === BENCH_JOB_TYPES.REHABILITATE) {
       const restore = Math.max(0, Number(plant?.rehabilitationValueLoss) || 0);
-      return `Clears nursery stress${restore ? ` · restores ${restore} coins` : ""} · ${job.lampAssisted ? 3 : 2} protected days.`;
+      return `Clears nursery stress${restore ? ` · restores ${restore} coins` : ""} · ${job.lampAssisted ? 3 : 2} protected days · +${REHABILITATION_BLOOM_REWARD} Bloom.`;
     }
     return `Creates a juvenile cutting · ${job.lampAssisted ? 2 : 3} mornings to mature.`;
   }
@@ -3915,6 +3958,7 @@ document.addEventListener("DOMContentLoaded", () => {
     run.selected = { ...entity, object };
     document.body.dataset.selection = entity.kind;
     if (entity.kind === "plant") {
+      run.deliveryOverviewPlantIds = [];
       const plant = state.inventory.find((item) => item.id === entity.id);
       if (plant && !plant.benchStatus) run.lastPlantId = plant.id;
       const comparingSwap = run.carried && run.carried !== plant?.id && (run.arranging || state.phase === "preparation");
@@ -4128,6 +4172,16 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUi();
   }
 
+  function unpackAllCartons() {
+    if (run.busy || run.crateAnimation || !canBatchUnpack({ day: state.day, crates: state.crates })) return;
+    run.batchUnpackActive = true;
+    run.batchUnpackSpecies = [];
+    run.batchUnpackPlantIds = [];
+    sound("crate");
+    toast(`Opening ${state.crates} cartons. The delivery overview will appear when the last plant is out.`, 3600);
+    unpackCrate();
+  }
+
   function unpackCrate() {
     if (state.crates <= 0 || !state.crateQueue.length) {
       toast("Only packing straw. It smells oddly optimistic.");
@@ -4144,6 +4198,10 @@ document.addEventListener("DOMContentLoaded", () => {
       needsRehabilitation: rescue,
       arrivalDay: state.day,
     });
+    if (run.batchUnpackActive) {
+      run.batchUnpackSpecies.push(plant.species);
+      run.batchUnpackPlantIds.push(plant.id);
+    }
     state.inventory.push(plant);
     state.crates -= 1;
     const object = createPlant(plant);
@@ -4183,7 +4241,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const opening = run.crateAnimation;
     if (!opening) return;
     const { carton, object, origin, target } = opening;
-    opening.time += dt;
+    opening.time += dt * (run.batchUnpackActive ? 3.2 : 1);
 
     if (reduceMotion || !carton) {
       if (carton) {
@@ -4255,6 +4313,17 @@ document.addEventListener("DOMContentLoaded", () => {
     object.scale.setScalar(looseScaleAt(target, object));
     run.crateAnimation = null;
     run.busy = false;
+    if (run.batchUnpackActive && state.crates > 0) {
+      run.selected = null;
+      run.carried = null;
+      document.body.dataset.selection = "none";
+      updateCrates();
+      updateSelectionRing();
+      updateSlotGlow();
+      save();
+      unpackCrate();
+      return;
+    }
     run.selected = { kind: "plant", id: plant.id, object };
     run.carried = plant.id;
     document.body.dataset.selection = "plant";
@@ -4266,11 +4335,28 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSelectionRing();
     updateSlotGlow();
     const lastCarton = state.crates === 0;
-    toast(plant.hydration < 42
-      ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
-      : lastCarton
-        ? `${plant.species}! Last carton open. The Care Bench and separate Recovery Station are ready.`
-        : `${plant.species}! A little rumpled, fundamentally promising.`);
+    if (run.batchUnpackActive) {
+      const names = [...run.batchUnpackSpecies];
+      const uniqueCount = new Set(names).size;
+      const batchPlantIds = new Set(run.batchUnpackPlantIds);
+      const thirstyCount = state.inventory.filter((item) => batchPlantIds.has(item.id) && item.hydration < 42).length;
+      run.deliveryOverviewPlantIds = [...run.batchUnpackPlantIds];
+      run.batchUnpackActive = false;
+      run.batchUnpackSpecies = [];
+      run.batchUnpackPlantIds = [];
+      run.selected = null;
+      run.carried = null;
+      document.body.dataset.selection = "none";
+      updateSelectionRing();
+      updateSlotGlow();
+      toast(`${names.length} cartons open · ${uniqueCount} species. ${thirstyCount ? `${thirstyCount} arrived thirsty. ` : ""}The delivery overview is ready.`, 5600);
+    } else {
+      toast(plant.hydration < 42
+        ? `${plant.species}! Thirsty and drooping after the trip—water will perk it up.`
+        : lastCarton
+          ? `${plant.species}! Last carton open. The Care Bench and separate Recovery Station are ready.`
+          : `${plant.species}! A little rumpled, fundamentally promising.`);
+    }
     updateUi();
   }
 
@@ -4949,6 +5035,9 @@ document.addEventListener("DOMContentLoaded", () => {
       day: state.day,
       capacity: state.inventoryCapacity,
     });
+    const completedRehabilitations = (benchMorning.appliedJobs || [])
+      .filter((job) => job.type === BENCH_JOB_TYPES.REHABILITATE).length;
+    if (completedRehabilitations) earnBloom(completedRehabilitations * REHABILITATION_BLOOM_REWARD);
     state.benchState = {
       ...benchMorning.benchState,
       slotCount: state.upgrades.benchShelf ? 2 : CARE_BENCH_BASE_SLOTS,
@@ -4957,8 +5046,11 @@ document.addEventListener("DOMContentLoaded", () => {
         : REHABILITATION_BASE_SLOTS,
     };
     state.inventory = migratePlantHealthInventory(benchMorning.inventory);
+    const rehabilitationRewardCopy = completedRehabilitations
+      ? ` Recovery work earned ${completedRehabilitations * REHABILITATION_BLOOM_REWARD} Bloom.`
+      : "";
     run.benchMessage = benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length
-      ? benchMorning.message
+      ? `${benchMorning.message}${rehabilitationRewardCopy}`
       : "Choose a plant, then choose one available job.";
     state.inventory.forEach((plant) => {
       plant.care = { water: false, mist: false, prune: false };
@@ -4985,7 +5077,7 @@ document.addEventListener("DOMContentLoaded", () => {
     showSupplierBoard();
     sound("open");
     const morningNotes = [
-      benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length ? benchMorning.message : "",
+      benchMorning.appliedJobs?.length || benchMorning.waitingJobs?.length ? `${benchMorning.message}${rehabilitationRewardCopy}` : "",
       maturedPlants.length ? `${maturedPlants.join(" and ")} ${maturedPlants.length === 1 ? "is" : "are"} mature and ready for sale.` : "",
       newlyRootBound.length ? `${newlyRootBound.join(" and ")} ${newlyRootBound.length === 1 ? "needs" : "need"} repotting soon.` : "",
       healthMorning.newlyStressed.length || healthMorning.newIssues.length ? healthMorning.message : "",
@@ -4998,6 +5090,84 @@ document.addEventListener("DOMContentLoaded", () => {
     ].filter(Boolean).join(" ");
     toast(morningNotes, morningNotes.length > 110 ? 5200 : 3100);
     updateUi();
+  }
+
+  function renderPlantReadiness(plant, person) {
+    if (!ui.plantReadiness || !ui.plantReadinessList) return;
+    if (!plant) {
+      ui.plantReadiness.hidden = true;
+      ui.plantReadinessList.replaceChildren();
+      return;
+    }
+    const remainingCustomers = person ? state.customers.slice(state.customerIndex + 1) : [];
+    const remainingInventory = person ? state.inventory.filter((item) => item.id !== plant.id) : state.inventory;
+    const species = speciesOf(plant);
+    const fit = lightFit(plant);
+    const condition = conditionOf(plant);
+    const careWishMet = person?.careWish === "water"
+      ? plant.hydration >= 78 || plant.care.water
+      : Boolean(person && species.beneficialCare.includes(person.careWish) && plant.care[person.careWish]);
+    const boutiqueMatches = person
+      ? [
+        plant.traits.includes(person.bonusTrait),
+        careWishMet,
+        condition.label === "thriving",
+        fit.level === "ideal",
+      ].filter(Boolean).length
+      : 0;
+    const readiness = plantSaleReadiness({
+      plant,
+      species,
+      light: fit,
+      conditionLabel: condition.label,
+      customer: person,
+      askingPrice: plantAskingPrice(plant),
+      priceBand: priceBandOf(plant),
+      boutiqueReady: !person || boutiqueMatches >= 2,
+      remainingCoverage: !person || inventoryCoversCustomers(remainingInventory, remainingCustomers),
+    });
+    ui.plantReadiness.hidden = false;
+    ui.plantReadiness.dataset.state = readiness.status;
+    const plantIndex = state.inventory.findIndex((item) => item.id === plant.id);
+    if (ui.plantReadinessTitle) ui.plantReadinessTitle.textContent = state.inventory.length > 6
+      ? `Sale readiness · plant ${plantIndex + 1} of ${state.inventory.length} · Q next`
+      : "Sale readiness";
+    if (ui.plantReadinessState) ui.plantReadinessState.textContent = readiness.label;
+    if (ui.plantReadinessSummary) ui.plantReadinessSummary.textContent = readiness.summary;
+    ui.plantReadinessList.replaceChildren();
+    readiness.checks.forEach((check) => {
+      const item = document.createElement("li");
+      item.dataset.state = check.state;
+      const label = document.createElement("strong");
+      label.textContent = check.label;
+      const detail = document.createElement("small");
+      detail.textContent = check.detail;
+      item.title = check.detail;
+      item.append(label, detail);
+      ui.plantReadinessList.append(item);
+    });
+  }
+
+  function renderDeliveryOverview() {
+    if (!ui.deliveryOverview || !ui.deliveryOverviewList) return;
+    const plants = run.deliveryOverviewPlantIds
+      .map((id) => state.inventory.find((plant) => plant.id === id))
+      .filter(Boolean);
+    ui.deliveryOverview.hidden = plants.length === 0;
+    ui.deliveryOverviewList.replaceChildren();
+    if (!plants.length) return;
+    const uniqueCount = new Set(plants.map((plant) => plant.speciesId || plant.species)).size;
+    if (ui.deliveryOverviewTitle) ui.deliveryOverviewTitle.textContent = `${plants.length} plants · ${uniqueCount} species`;
+    plants.forEach((plant) => {
+      const species = speciesOf(plant);
+      const item = document.createElement("li");
+      const name = document.createElement("strong");
+      name.textContent = plant.species;
+      const detail = document.createElement("small");
+      detail.textContent = `${plant.needsRehabilitation ? "Rescue · needs Rehabilitation" : "Healthy arrival"} · likes ${species.preferredLight} light`;
+      item.append(name, detail);
+      ui.deliveryOverviewList.append(item);
+    });
   }
 
   function updateUi(saleMessage = false) {
@@ -5131,6 +5301,16 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.openShop.hidden = !readyToOpen;
       ui.openShop.disabled = !readyToOpen || !inventoryCoversCustomers(state.inventory, state.customers.slice(state.customerIndex));
     }
+    if (ui.openAllCartons) {
+      const batchAvailable = state.phase === "preparation"
+        && canBatchUnpack({ day: state.day, crates: state.crates });
+      ui.openAllCartons.hidden = !batchAvailable && !run.batchUnpackActive;
+      ui.openAllCartons.disabled = run.busy || run.batchUnpackActive;
+      const label = ui.openAllCartons.querySelector("span:first-child");
+      if (label) label.textContent = run.batchUnpackActive
+        ? `Opening delivery · ${state.crates} left`
+        : `Open all ${state.crates} cartons`;
+    }
 
     let action = "Select something";
     let disabled = true;
@@ -5157,10 +5337,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const plant = state.inventory.find((item) => item.id === selected.id);
       if (plant) {
         const spec = speciesOf(plant);
-        const careCount = spec.beneficialCare.filter((care) => plant.care[care]).length;
         const condition = conditionOf(plant);
         const fit = lightFit(plant);
-        const helpfulCare = spec.beneficialCare.join(" · ");
         const specialCopy = spec.special ? " · rare nursery specimen" : "";
         const heldCopy = plant.held ? " · HELD for weekly order" : "";
         const goalFit = state.displayGoal && !state.displayGoal.claimed && plant.traits.includes(state.displayGoal.trait)
@@ -5174,7 +5352,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ? ` · needs ${supplyItemForId(treatmentForIssue(plant.healthIssue))?.title || "treatment"}`
           : "";
         const fertilizerCopy = hasFertilizerGrowthBoost(plant, { day: state.day }) ? " · fertilizer boost active" : "";
-        copy = `${plant.traits.join(" · ")}${specialCopy}${heldCopy} · ${condition.icon} ${condition.label}${growth}${nurseryAgeCopy}${rehabCopy}${treatmentCopy}${fertilizerCopy} · soil ${Math.round(plant.hydration)}% · ${fit.label} · ${PRICE_BANDS[priceBandOf(plant)].label} tag ${plantAskingPrice(plant)} coins · likes ${helpfulCare} · ${careCount}/${spec.beneficialCare.length} helpful care.${goalFit}`;
+        copy = `${plant.traits.join(" · ")}${specialCopy}${heldCopy}. ${condition.icon} ${condition.label}${growth}${nurseryAgeCopy}${rehabCopy}${treatmentCopy}${fertilizerCopy}. Soil ${Math.round(plant.hydration)}%. ${fit.label}. ${PRICE_BANDS[priceBandOf(plant)].label} tag: ${plantAskingPrice(plant)} coins.${goalFit}`;
         if (run.carried && run.carried !== plant.id && (run.arranging || state.phase === "preparation")) {
           const carried = state.inventory.find((item) => item.id === run.carried);
           action = `Swap with ${carried?.species || "moving plant"}`;
@@ -5255,6 +5433,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.action.disabled = disabled || run.busy;
     }
     const plant = selected?.kind === "plant" ? state.inventory.find((item) => item.id === selected.id) : null;
+    renderPlantReadiness(plant, person);
+    renderDeliveryOverview();
     if (ui.priceTray) {
       const showPrice = Boolean(plant && !plant.benchStatus && state.phase !== "supply" && state.phase !== "report");
       ui.priceTray.hidden = !showPrice;
@@ -5481,10 +5661,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function cycleKeyboardSelection(direction) {
-    const candidates = interactive.filter((object) => object.visible && object.parent && object.userData.entity);
+    const candidates = sortKeyboardTargets(
+      interactive.filter((object) => object.visible && object.parent && object.userData.entity),
+      state.inventory.map((plant) => plant.id),
+    );
     if (!candidates.length) return;
-    run.keyboardIndex = (run.keyboardIndex + direction + candidates.length) % candidates.length;
-    const object = candidates[run.keyboardIndex];
+    const currentIndex = candidates.indexOf(run.selected?.object);
+    const nextIndex = currentIndex < 0
+      ? direction > 0 ? 0 : candidates.length - 1
+      : (currentIndex + direction + candidates.length) % candidates.length;
+    const object = candidates[nextIndex];
+    run.keyboardIndex = nextIndex;
     const entity = object.userData.entity;
     selectEntity(entity, object);
     const plant = entity.kind === "plant" ? state.inventory.find((item) => item.id === entity.id) : null;

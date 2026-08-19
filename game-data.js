@@ -1138,7 +1138,7 @@ export const SUPPLIER_TYPES = [
     selection: {
       mode: "mystery-rescue",
       reveal: "count-only",
-      avoidDuplicates: false,
+      avoidDuplicates: true,
       condition: "stressed",
       rareChance: 0.15,
     },

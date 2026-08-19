@@ -28,7 +28,7 @@
       id="game-canvas"
       tabindex="0"
       role="application"
-      aria-label="Mostly Alive Plants shop. Press Q to cycle plants, cartons, and work stations. Press E to act."
+      aria-label="Mostly Alive Plants shop. Press Q to cycle plants first, then cartons, customers, and work stations. Press E to act."
       aria-describedby="task-copy"
     ></canvas>
     <div class="scene-wash" aria-hidden="true"></div>
@@ -47,7 +47,7 @@
           overwater the inventory.
         </p>
         <button id="start-game" class="button button-primary title-button" type="button" disabled>
-          <span>Start the day</span>
+          <span id="start-game-label">Start the day</span>
           <span aria-hidden="true">↗</span>
         </button>
         <div class="loading-line" aria-hidden="true"><span id="loading-progress"></span></div>
@@ -56,7 +56,7 @@
           <span>No rush</span><span>Plants recover</span><span>Odd customers welcome</span>
         </div>
       </div>
-      <p class="title-footer"><span>Day 01</span><span>Best enjoyed with sound</span></p>
+      <p class="title-footer"><span id="title-save-day">Day 01</span><span>Best enjoyed with sound</span></p>
     </main>
 
     <section id="game-ui" class="game-ui" hidden aria-label="Game controls and status">
@@ -107,6 +107,14 @@
         <p class="panel-kicker">Today in the shop</p>
         <h2 id="task-title">Open the delivery</h2>
         <p id="task-copy">Open the paper-wrapped carton to meet today’s plants.</p>
+        <section id="plant-readiness" class="plant-readiness" hidden aria-labelledby="plant-readiness-title">
+          <div class="plant-readiness-heading">
+            <span id="plant-readiness-title">Sale readiness</span>
+            <strong id="plant-readiness-state">Not ready</strong>
+          </div>
+          <ul id="plant-readiness-list" class="plant-readiness-list"></ul>
+          <p id="plant-readiness-summary">Choose a plant to see what it needs.</p>
+        </section>
         <dl id="trade-profile" class="trade-profile" aria-label="Today’s market conditions">
           <div>
             <dt>Demand</dt>
@@ -141,6 +149,21 @@
           <span>Open the shop</span>
           <span aria-hidden="true">↗</span>
         </button>
+        <button id="open-all-cartons" class="button button-quiet task-button batch-carton-button" type="button" hidden>
+          <span>Open all cartons</span>
+          <span aria-hidden="true">✦</span>
+        </button>
+        <section id="delivery-overview" class="delivery-overview" hidden aria-labelledby="delivery-overview-title">
+          <div class="delivery-overview-heading">
+            <div>
+              <span>Batch unpack complete</span>
+              <strong id="delivery-overview-title">Today’s arrivals</strong>
+            </div>
+            <button id="close-delivery-overview" type="button" aria-label="Close delivery overview">×</button>
+          </div>
+          <ul id="delivery-overview-list"></ul>
+          <p>Select a plant to see its full sale-readiness checklist.</p>
+        </section>
       </aside>
 
       <aside id="customer-card" class="customer-card" hidden aria-live="polite">
@@ -336,14 +359,14 @@
         <p class="panel-kicker">Greenhouse handbook</p>
         <h2 id="help-title">How to keep things mostly alive</h2>
         <div class="help-grid">
-          <div><strong>1</strong><p>Visitor demand changes each day. Check the market strip before you buy stock.</p></div>
+          <div><strong>1</strong><p>Visitor demand changes each day. Check the market strip before you buy stock. From Day 6, Open all cartons gives one delivery overview.</p></div>
           <div><strong>2</strong><p>Unsold plants stay in the shop. Keep a useful range, but plan for daily costs. From Week 4, stock above the target uses 2 extra coins per plant at closing.</p></div>
           <div><strong>3</strong><p>Read Must have, Would love, and Budget. Care, arrange, or retag a plant to improve the match.</p></div>
-          <div><strong>4</strong><p>The Care Bench runs Repot and Propagate work. The separate Recovery Station can rehabilitate two plants at once. Its trolley upgrade adds a third place.</p></div>
+          <div><strong>4</strong><p>The Care Bench runs Repot and Propagate work. The separate Recovery Station can rehabilitate two plants at once. Recovery restores value and earns 3 Bloom. Its trolley upgrade adds a third place.</p></div>
           <div><strong>5</strong><p>Open the Retail Supply Shelf to buy clip lights, fertilizer, and treatments. Keep fertilizer, fungicide, and potting soil ready for customer add-ons.</p></div>
           <div><strong>6</strong><p>From Week 2, accept one optional order. Hold healthy matching plants, then complete the order by Friday. Neighborhood events also change one type of demand.</p></div>
         </div>
-        <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles shop objects, E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
+        <p class="keyboard-help"><strong>Keyboard:</strong> Q cycles plants first, then cartons, the customer, and work stations. E acts, 1/2/3 use care tools, 4/5/6 choose Quick/Fair/Boutique, and arrow keys turn the view.</p>
         <p class="fine-print">Plants droop, but never die. There are no impatient customers. Explore at your own pace.</p>
       </div>
     </section>

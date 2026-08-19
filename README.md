@@ -15,15 +15,15 @@ Then visit `http://127.0.0.1:4173/`.
 ### Controls
 
 - Mouse/touch: tap an object, use the large contextual action, drag to pan, and wheel/pinch to zoom.
-- Keyboard: `Q` cycles shop objects, `E` acts, `1`/`2`/`3` use care tools, `4`/`5`/`6` choose Quick/Fair/Boutique, and arrow keys turn the view.
+- Keyboard: `Q` cycles plants first, then cartons, the customer, and work stations. Empty display spots are not part of the cycle. `E` acts, `1`/`2`/`3` use care tools, `4`/`5`/`6` choose Quick/Fair/Boutique, and arrow keys turn the view.
 
 ## The day loop
 
 1. Check the weekday, rotating weekly objective, and visitor forecast. Week 1 has three visitors per day. Week 2 grows to four or five, and later weeks rotate between four and six. The Shop Sign can add one more visitor.
 2. Choose a Reliable Tray, Curated Selection, discounted Mystery Rescue Lot, or—when the shop is already prepared—use current stock. Normal shipments grow with demand and can contain up to seven plants. A Mystery Rescue delivery has only two or three nursery-stressed plants; the rest arrives healthy. A Rare Nursery sellout collection can contain eight, with one specialist specimen and seven request matches.
-3. Pay the nursery invoice, open the animated cartons, and watch each distinct plant move onto the preparation bench.
+3. Pay the nursery invoice, open the animated cartons, and watch each distinct plant move onto the preparation bench. From Day 6, **Open all cartons** runs a faster animated sequence and finishes with one readable delivery overview.
 4. Read soil and species preferences. Thirsty and unhealthy plants visibly droop and yellow. Root-bound plants show overgrown roots, and treated plants recover on screen. Watering and misting have distinct effects.
-5. Use the physical work areas during preparation. Repot and Propagate share the Care Bench. Rehabilitation uses two separate Recovery Station places, so two nursery-stressed plants can recover together. The Recovery trolley upgrade adds a third place. Rehabilitate resets nursery age, clears nursery stress, and restores a rescue plant’s lost sale value.
+5. Use the physical work areas during preparation. Repot and Propagate share the Care Bench. Rehabilitation uses two separate Recovery Station places, so two nursery-stressed plants can recover together. The Recovery trolley upgrade adds a third place. Rehabilitate resets nursery age, clears nursery stress, restores a rescue plant’s lost sale value, and earns 3 Bloom.
 6. Arrange or swap stock across shade, indirect, and sunny displays, then give every plant a visible Quick, Fair, or Boutique price tag. Colored rings show light fit while a separate pulse marks the daily display vignette.
 7. Manually open the shop, then read each neighbor’s **Must have**, **Would love**, and **Budget**. A sale depends on the required trait, plant condition, root comfort, and asking price. Some customers also request optional fertilizer, fungicide, or potting soil. Missing an add-on never blocks the plant sale.
 8. Balance stock range against daily costs. Unsold plants stay in the shop, use capacity, and slowly become root-bound. The base shop aims to keep six choices after a full sales day. Capacity 16 aims for eight, and capacity 20 aims for ten. The Delivery Rack raises capacity from 12 to 16 plants. Display Shelves add four real display spots and raise the combined maximum to 20.
@@ -33,6 +33,10 @@ Then visit `http://127.0.0.1:4173/`.
 12. Read one small weekly neighborhood event. It changes demand for one trait without blocking the day. Returning customers can refer to the exact species and price level from their last purchase.
 13. Improve the nursery relationship with each paid shipment. Later levels reveal more Mystery Rescue information and give the Reliable Tray a discount.
 14. Build relationships with 12 recurring neighbors, advance the weekly objective, and review a fuller shop-week recap after Friday.
+
+Selecting a plant opens a compact sale-readiness checklist. It separates availability, display placement, soil, light, condition, helpful care, and the current visitor match. It names the first blocker instead of hiding it in one long status sentence. With more than six plants, the same card shows the plant’s position in the `Q` cycle.
+
+Supplier planning prefers species that are not already in the shop. Every normal lot also maximizes distinct species before it uses necessary duplicates. Supplier cards show both the number of unique species and the number that are new to current stock.
 
 The watering can is a working 3D tool. Select a plant, then select the can and act. Its pour animation uses the same watering rules as the Water control. The grow lamp also has a real Care Bench effect. It adds 2 more coins of Repot value, adds one Rehabilitate protection day, and reduces propagated-plant growth from three mornings to two.
 

@@ -85,6 +85,26 @@ nearCapacityLots.forEach((lot) => {
   assert.equal(inventoryCoversCustomers([...nearCapacityInventory, ...previewInventory(lot)], [lushCustomer]), true);
 });
 
+const repeatedSpeciesInventory = Array.from({ length: 6 }, (_, index) => plantRecord(fern, `variety-${index}`));
+const varietyCustomers = generateCustomerBriefs({
+  day: 11,
+  count: 5,
+  inventory: repeatedSpeciesInventory,
+  capacity: 16,
+});
+const varietyLots = generateSupplierLots({
+  day: 11,
+  customers: varietyCustomers,
+  inventory: repeatedSpeciesInventory,
+  coins: 999,
+  capacity: 16,
+}).slice(0, 3);
+varietyLots.forEach((lot) => {
+  assert.equal(lot.uniqueSpeciesCount, new Set(lot.speciesIds).size);
+  assert.ok(lot.uniqueSpeciesCount >= Math.min(3, lot.quantity), `${lot.name} must provide a useful species range.`);
+  assert.ok(lot.newSpeciesCount >= Math.min(3, lot.quantity), `${lot.name} must prefer species that are not already in stock.`);
+});
+
 const fullMissingInventory = Array.from({ length: 16 }, (_, index) => plantRecord(succulent, `full-${index}`));
 const fullMissingLots = generateSupplierLots({
   day: 20,
